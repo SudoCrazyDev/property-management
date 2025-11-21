@@ -3,6 +3,7 @@ import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { UsersPage } from "@/pages/users"
 import { PropertiesPage } from "@/pages/properties"
+import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
 import { PrivateLayout } from "@/components/layout/private-layout"
 
@@ -61,6 +62,10 @@ export const router = createBrowserRouter([
       {
         path: "properties",
         element: <PropertiesPage />,
+      },
+      {
+        path: "jobs",
+        element: <JobsPage />,
       },
       {
         path: "settings",
