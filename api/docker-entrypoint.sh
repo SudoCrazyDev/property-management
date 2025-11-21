@@ -23,7 +23,7 @@ if [ ! -f "artisan" ]; then
     chown -R www-data:www-data "$TEMP_LARAVEL_DIR"
     
     # Install Laravel in the temp directory
-    su -s /bin/bash - www-data -c "composer create-project laravel/laravel $TEMP_LARAVEL_DIR --prefer-dist --no-interaction"
+    su -s /bin/bash - www-data -c "cd /var/www && composer create-project laravel/laravel $TEMP_LARAVEL_DIR --prefer-dist --no-interaction"
     
     # Copy Laravel files to current directory, preserving existing files/directories
     cd "$TEMP_LARAVEL_DIR"
@@ -55,7 +55,7 @@ fi
 # Install/update dependencies
 if [ -f "composer.json" ]; then
     echo "Installing Composer dependencies..."
-    su -s /bin/bash - www-data -c "composer install --no-interaction --prefer-dist --optimize-autoloader"
+    su -s /bin/bash - www-data -c "cd /var/www/html && composer install --no-interaction --prefer-dist --optimize-autoloader"
 fi
 
 # Set proper permissions for storage and cache
@@ -74,7 +74,7 @@ if [ ! -f ".env" ]; then
         echo "APP_KEY=" > .env
         chown www-data:www-data .env
     fi
-    su -s /bin/bash - www-data -c "php artisan key:generate --force"
+    su -s /bin/bash - www-data -c "cd /var/www/html && php artisan key:generate --force"
 fi
 
 # Ensure proper permissions one final time
@@ -83,5 +83,5 @@ chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache 2>/dev/null || 
 
 # Start Laravel development server as www-data
 echo "Starting Laravel development server..."
-exec su -s /bin/bash - www-data -c "php artisan serve --host=0.0.0.0 --port=8000"
+exec su -s /bin/bash - www-data -c "cd /var/www/html && php artisan serve --host=0.0.0.0 --port=8000"
 
