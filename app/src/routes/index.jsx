@@ -3,6 +3,7 @@ import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { UsersPage } from "@/pages/users"
 import { PropertiesPage } from "@/pages/properties"
+import { SettingsPage } from "@/pages/settings"
 import { PrivateLayout } from "@/components/layout/private-layout"
 
 // Placeholder auth check - replace with actual auth logic later
@@ -60,6 +61,10 @@ export const router = createBrowserRouter([
       {
         path: "properties",
         element: <PropertiesPage />,
+      },
+      {
+        path: "settings",
+        element: <SettingsPage />,
       },
     ],
   },
