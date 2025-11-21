@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router"
 import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { UsersPage } from "@/pages/users"
+import { PropertiesPage } from "@/pages/properties"
 import { PrivateLayout } from "@/components/layout/private-layout"
 
 // Placeholder auth check - replace with actual auth logic later
@@ -55,6 +56,10 @@ export const router = createBrowserRouter([
       {
         path: "users",
         element: <UsersPage />,
+      },
+      {
+        path: "properties",
+        element: <PropertiesPage />,
       },
     ],
   },

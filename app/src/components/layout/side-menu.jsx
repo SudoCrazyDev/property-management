@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, Users, UserCog, FileText, Settings, LogOut } from "lucide-react"
+import { LayoutDashboard, Building2, UserCog, Settings, LogOut } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
@@ -15,19 +15,9 @@ const menuItems = [
     href: "/properties",
   },
   {
-    title: "Tenants",
-    icon: Users,
-    href: "/tenants",
-  },
-  {
     title: "Users",
     icon: UserCog,
     href: "/users",
-  },
-  {
-    title: "Documents",
-    icon: FileText,
-    href: "/documents",
   },
   {
     title: "Settings",
