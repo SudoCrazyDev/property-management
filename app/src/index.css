@@ -1,1 +1,111 @@
 @import "tailwindcss";
+
+@theme {
+  /* Vibrant orange color scheme - light and bright */
+  --color-background: oklch(98% 0.01 45);
+  --color-foreground: oklch(15% 0.02 45);
+  
+  --color-card: oklch(100% 0 0);
+  --color-card-foreground: oklch(15% 0.02 45);
+  
+  --color-popover: oklch(100% 0 0);
+  --color-popover-foreground: oklch(15% 0.02 45);
+  
+  --color-primary: oklch(65% 0.2 45);
+  --color-primary-foreground: oklch(100% 0 0);
+  
+  --color-secondary: oklch(95% 0.03 45);
+  --color-secondary-foreground: oklch(15% 0.02 45);
+  
+  --color-muted: oklch(92% 0.02 45);
+  --color-muted-foreground: oklch(50% 0.05 45);
+  
+  --color-accent: oklch(90% 0.08 45);
+  --color-accent-foreground: oklch(15% 0.02 45);
+  
+  --color-destructive: oklch(60% 0.25 25);
+  --color-destructive-foreground: oklch(100% 0 0);
+  
+  --color-border: oklch(85% 0.05 45);
+  --color-input: oklch(95% 0.02 45);
+  --color-ring: oklch(65% 0.2 45);
+  
+  --radius: 0.5rem;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Enhanced drawer animations with spring-like easing */
+@keyframes slide-in-from-left {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-to-left {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-in-from-right {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-to-right {
+  0% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Apply spring-like easing to drawer animations */
+[data-state="open"][data-side="left"] {
+  animation: slide-in-from-left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-state="closed"][data-side="left"] {
+  animation: slide-out-to-left 0.3s cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-state="open"][data-side="right"] {
+  animation: slide-in-from-right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-state="closed"][data-side="right"] {
+  animation: slide-out-to-right 0.3s cubic-bezier(0.4, 0, 1, 1);
+}
