@@ -60,6 +60,14 @@ const jobTypeSchema = z.object({
   name: z.string().min(1, "Job type name is required"),
 })
 
+const inspectorAttributeStatusSchema = z.object({
+  name: z.string().min(1, "Status name is required"),
+})
+
+const technicianAttributeStatusSchema = z.object({
+  name: z.string().min(1, "Status name is required"),
+})
+
 // Mock data - replace with API calls later
 const initialRoles = ["Admin", "QA", "Tenant", "Inspector", "Technician"]
 const initialPropertyTypes = ["House", "Apartment", "Condo", "Duplex", "Multi-Family", "Commercial"]
@@ -81,6 +89,8 @@ const initialPropertyLocationAttributes = [
   "HVAC Vents",
 ]
 const initialJobTypes = ["Move In", "Move Out"]
+const initialInspectorAttributeStatuses = ["Pass", "Fail", "N/A", "Needs Attention"]
+const initialTechnicianAttributeStatuses = ["Fixed", "Not Fixed", "N/A", "Pending"]
 
 function RolesTab() {
   const [roles, setRoles] = useState(initialRoles)
@@ -1038,6 +1048,336 @@ function JobTypesTab() {
   )
 }
 
+function InspectorAttributeStatusesTab() {
+  const [statuses, setStatuses] = useState(initialInspectorAttributeStatuses)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingStatus, setEditingStatus] = useState(null)
+
+  const form = useForm({
+    resolver: zodResolver(inspectorAttributeStatusSchema),
+    defaultValues: {
+      name: "",
+    },
+  })
+
+  const handleOpenDialog = (status = null) => {
+    setEditingStatus(status)
+    if (status) {
+      form.reset({ name: status })
+    } else {
+      form.reset()
+    }
+    setIsDialogOpen(true)
+  }
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false)
+    setEditingStatus(null)
+    form.reset()
+  }
+
+  const onSubmit = (data) => {
+    // Placeholder - no API yet
+    if (editingStatus) {
+      setStatuses(
+        statuses.map((s) => (s === editingStatus ? data.name : s))
+      )
+    } else {
+      setStatuses([...statuses, data.name])
+    }
+    handleCloseDialog()
+  }
+
+  const handleDelete = (status) => {
+    // Placeholder - no API yet
+    setStatuses(statuses.filter((s) => s !== status))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Inspector Attribute Statuses</h2>
+          <p className="text-muted-foreground">
+            Manage statuses for inspector attributes
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Status
+              </Button>
+            </motion.div>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingStatus ? "Edit Status" : "Create New Status"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingStatus
+                  ? "Update the status name below."
+                  : "Enter a name for the new status."}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormItem>
+                  <FormLabel htmlFor="statusName">Status Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="statusName"
+                      placeholder="e.g., Excellent"
+                      {...form.register("name")}
+                    />
+                  </FormControl>
+                  <FormMessage>
+                    {form.formState.errors.name?.message}
+                  </FormMessage>
+                </FormItem>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCloseDialog}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting
+                      ? "Saving..."
+                      : editingStatus
+                      ? "Update Status"
+                      : "Create Status"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Status Name</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {statuses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="h-24 text-center">
+                      No statuses found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  statuses.map((status) => (
+                    <TableRow key={status}>
+                      <TableCell className="font-medium">{status}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenDialog(status)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(status)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function TechnicianAttributeStatusesTab() {
+  const [statuses, setStatuses] = useState(initialTechnicianAttributeStatuses)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingStatus, setEditingStatus] = useState(null)
+
+  const form = useForm({
+    resolver: zodResolver(technicianAttributeStatusSchema),
+    defaultValues: {
+      name: "",
+    },
+  })
+
+  const handleOpenDialog = (status = null) => {
+    setEditingStatus(status)
+    if (status) {
+      form.reset({ name: status })
+    } else {
+      form.reset()
+    }
+    setIsDialogOpen(true)
+  }
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false)
+    setEditingStatus(null)
+    form.reset()
+  }
+
+  const onSubmit = (data) => {
+    // Placeholder - no API yet
+    if (editingStatus) {
+      setStatuses(
+        statuses.map((s) => (s === editingStatus ? data.name : s))
+      )
+    } else {
+      setStatuses([...statuses, data.name])
+    }
+    handleCloseDialog()
+  }
+
+  const handleDelete = (status) => {
+    // Placeholder - no API yet
+    setStatuses(statuses.filter((s) => s !== status))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Technician Attribute Statuses</h2>
+          <p className="text-muted-foreground">
+            Manage statuses for technician attributes
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Status
+              </Button>
+            </motion.div>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingStatus ? "Edit Status" : "Create New Status"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingStatus
+                  ? "Update the status name below."
+                  : "Enter a name for the new status."}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormItem>
+                  <FormLabel htmlFor="statusName">Status Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="statusName"
+                      placeholder="e.g., Completed"
+                      {...form.register("name")}
+                    />
+                  </FormControl>
+                  <FormMessage>
+                    {form.formState.errors.name?.message}
+                  </FormMessage>
+                </FormItem>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCloseDialog}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting
+                      ? "Saving..."
+                      : editingStatus
+                      ? "Update Status"
+                      : "Create Status"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Status Name</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {statuses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="h-24 text-center">
+                      No statuses found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  statuses.map((status) => (
+                    <TableRow key={status}>
+                      <TableCell className="font-medium">{status}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenDialog(status)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(status)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   return (
     <motion.div
@@ -1054,12 +1394,14 @@ export function SettingsPage() {
       </div>
 
       <Tabs defaultValue="roles" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="roles">Roles</TabsTrigger>
           <TabsTrigger value="property-types">Property Types</TabsTrigger>
           <TabsTrigger value="property-locations">Property Locations</TabsTrigger>
           <TabsTrigger value="location-attributes">Location Attributes</TabsTrigger>
           <TabsTrigger value="job-types">Job Types</TabsTrigger>
+          <TabsTrigger value="inspector-statuses">Inspector Statuses</TabsTrigger>
+          <TabsTrigger value="technician-statuses">Technician Statuses</TabsTrigger>
         </TabsList>
         <TabsContent value="roles">
           <RolesTab />
@@ -1075,6 +1417,12 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="job-types">
           <JobTypesTab />
+        </TabsContent>
+        <TabsContent value="inspector-statuses">
+          <InspectorAttributeStatusesTab />
+        </TabsContent>
+        <TabsContent value="technician-statuses">
+          <TechnicianAttributeStatusesTab />
         </TabsContent>
       </Tabs>
     </motion.div>
