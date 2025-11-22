@@ -7,6 +7,9 @@ import { useRoles } from "@/hooks/use-roles"
 import { usePropertyTypes } from "@/hooks/use-property-types"
 import { usePropertyLocations } from "@/hooks/use-property-locations"
 import { useLocationAttributes } from "@/hooks/use-location-attributes"
+import { useJobTypes } from "@/hooks/use-job-types"
+import { useInspectorStatuses } from "@/hooks/use-inspector-statuses"
+import { useTechnicianStatuses } from "@/hooks/use-technician-statuses"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1242,9 +1245,14 @@ function PropertyLocationAttributesTab() {
 }
 
 function JobTypesTab() {
-  const [jobTypes, setJobTypes] = useState(initialJobTypes)
+  const { jobTypes, loading, error, createJobType, updateJobType, deleteJobType } = useJobTypes()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingJobType, setEditingJobType] = useState(null)
+  const [jobTypeToDelete, setJobTypeToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(jobTypeSchema),
@@ -1256,7 +1264,7 @@ function JobTypesTab() {
   const handleOpenDialog = (jobType = null) => {
     setEditingJobType(jobType)
     if (jobType) {
-      form.reset({ name: jobType })
+      form.reset({ name: jobType.name })
     } else {
       form.reset()
     }
@@ -1269,21 +1277,81 @@ function JobTypesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingJobType) {
-      setJobTypes(
-        jobTypes.map((jt) => (jt === editingJobType ? data.name : jt))
-      )
-    } else {
-      setJobTypes([...jobTypes, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingJobType) {
+        const result = await updateJobType(editingJobType.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Job type "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update job type. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createJobType(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Job type "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create job type. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (jobType) => {
-    // Placeholder - no API yet
-    setJobTypes(jobTypes.filter((jt) => jt !== jobType))
+  const handleDeleteClick = (jobType) => {
+    setJobTypeToDelete(jobType)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!jobTypeToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteJobType(jobTypeToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Job type "${jobTypeToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setJobTypeToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete job type. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setJobTypeToDelete(null)
   }
 
   return (
@@ -1338,15 +1406,22 @@ function JobTypesTab() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingJobType
-                      ? "Update Job Type"
-                      : "Create Job Type"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingJobType ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingJobType ? "Update" : "Create"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -1355,61 +1430,115 @@ function JobTypesTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Job Type Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobTypes.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No job types found.
-                    </TableCell>
+                    <TableHead>Job Type Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  jobTypes.map((jobType) => (
-                    <TableRow key={jobType}>
-                      <TableCell className="font-medium">{jobType}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(jobType)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(jobType)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {jobTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No job types found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    jobTypes.map((jobType) => (
+                      <TableRow key={jobType.id}>
+                        <TableCell className="font-medium">{jobType.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(jobType)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(jobType)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Job Type</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{jobTypeToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function InspectorAttributeStatusesTab() {
-  const [statuses, setStatuses] = useState(initialInspectorAttributeStatuses)
+  const { inspectorStatuses, loading, error, createInspectorStatus, updateInspectorStatus, deleteInspectorStatus } = useInspectorStatuses()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingStatus, setEditingStatus] = useState(null)
+  const [statusToDelete, setStatusToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(inspectorAttributeStatusSchema),
@@ -1421,7 +1550,7 @@ function InspectorAttributeStatusesTab() {
   const handleOpenDialog = (status = null) => {
     setEditingStatus(status)
     if (status) {
-      form.reset({ name: status })
+      form.reset({ name: status.name })
     } else {
       form.reset()
     }
@@ -1434,21 +1563,81 @@ function InspectorAttributeStatusesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingStatus) {
-      setStatuses(
-        statuses.map((s) => (s === editingStatus ? data.name : s))
-      )
-    } else {
-      setStatuses([...statuses, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingStatus) {
+        const result = await updateInspectorStatus(editingStatus.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Inspector status "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update inspector status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createInspectorStatus(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Inspector status "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create inspector status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (status) => {
-    // Placeholder - no API yet
-    setStatuses(statuses.filter((s) => s !== status))
+  const handleDeleteClick = (status) => {
+    setStatusToDelete(status)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!statusToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteInspectorStatus(statusToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Inspector status "${statusToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setStatusToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete inspector status. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setStatusToDelete(null)
   }
 
   return (
@@ -1520,61 +1709,115 @@ function InspectorAttributeStatusesTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Status Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {statuses.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No statuses found.
-                    </TableCell>
+                    <TableHead>Status Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  statuses.map((status) => (
-                    <TableRow key={status}>
-                      <TableCell className="font-medium">{status}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(status)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(status)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {inspectorStatuses.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No statuses found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    inspectorStatuses.map((status) => (
+                      <TableRow key={status.id}>
+                        <TableCell className="font-medium">{status.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(status)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(status)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Inspector Status</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{statusToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function TechnicianAttributeStatusesTab() {
-  const [statuses, setStatuses] = useState(initialTechnicianAttributeStatuses)
+  const { technicianStatuses, loading, error, createTechnicianStatus, updateTechnicianStatus, deleteTechnicianStatus } = useTechnicianStatuses()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingStatus, setEditingStatus] = useState(null)
+  const [statusToDelete, setStatusToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(technicianAttributeStatusSchema),
@@ -1586,7 +1829,7 @@ function TechnicianAttributeStatusesTab() {
   const handleOpenDialog = (status = null) => {
     setEditingStatus(status)
     if (status) {
-      form.reset({ name: status })
+      form.reset({ name: status.name })
     } else {
       form.reset()
     }
@@ -1599,21 +1842,81 @@ function TechnicianAttributeStatusesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingStatus) {
-      setStatuses(
-        statuses.map((s) => (s === editingStatus ? data.name : s))
-      )
-    } else {
-      setStatuses([...statuses, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingStatus) {
+        const result = await updateTechnicianStatus(editingStatus.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Technician status "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update technician status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createTechnicianStatus(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Technician status "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create technician status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (status) => {
-    // Placeholder - no API yet
-    setStatuses(statuses.filter((s) => s !== status))
+  const handleDeleteClick = (status) => {
+    setStatusToDelete(status)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!statusToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteTechnicianStatus(statusToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Technician status "${statusToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setStatusToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete technician status. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setStatusToDelete(null)
   }
 
   return (
@@ -1668,15 +1971,22 @@ function TechnicianAttributeStatusesTab() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingStatus
-                      ? "Update Status"
-                      : "Create Status"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingStatus ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingStatus ? "Update" : "Create"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -1685,53 +1995,102 @@ function TechnicianAttributeStatusesTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Status Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {statuses.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No statuses found.
-                    </TableCell>
+                    <TableHead>Status Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  statuses.map((status) => (
-                    <TableRow key={status}>
-                      <TableCell className="font-medium">{status}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(status)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(status)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {technicianStatuses.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No statuses found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    technicianStatuses.map((status) => (
+                      <TableRow key={status.id}>
+                        <TableCell className="font-medium">{status.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(status)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(status)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Technician Status</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{statusToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
