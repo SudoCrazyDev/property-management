@@ -1379,6 +1379,37 @@ function TechnicianAttributeStatusesTab() {
 }
 
 export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState("roles")
+
+  const settingsCategories = [
+    {
+      title: "User Management",
+      items: [
+        { id: "roles", label: "Roles", component: <RolesTab /> },
+      ],
+    },
+    {
+      title: "Property Management",
+      items: [
+        { id: "property-types", label: "Property Types", component: <PropertyTypesTab /> },
+        { id: "property-locations", label: "Property Locations", component: <PropertyLocationsTab /> },
+        { id: "location-attributes", label: "Location Attributes", component: <PropertyLocationAttributesTab /> },
+      ],
+    },
+    {
+      title: "Job Management",
+      items: [
+        { id: "job-types", label: "Job Types", component: <JobTypesTab /> },
+        { id: "inspector-statuses", label: "Inspector Statuses", component: <InspectorAttributeStatusesTab /> },
+        { id: "technician-statuses", label: "Technician Statuses", component: <TechnicianAttributeStatusesTab /> },
+      ],
+    },
+  ]
+
+  const activeComponent = settingsCategories
+    .flatMap((cat) => cat.items)
+    .find((item) => item.id === activeTab)?.component
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -1393,38 +1424,44 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="roles" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="roles">Roles</TabsTrigger>
-          <TabsTrigger value="property-types">Property Types</TabsTrigger>
-          <TabsTrigger value="property-locations">Property Locations</TabsTrigger>
-          <TabsTrigger value="location-attributes">Location Attributes</TabsTrigger>
-          <TabsTrigger value="job-types">Job Types</TabsTrigger>
-          <TabsTrigger value="inspector-statuses">Inspector Statuses</TabsTrigger>
-          <TabsTrigger value="technician-statuses">Technician Statuses</TabsTrigger>
-        </TabsList>
-        <TabsContent value="roles">
-          <RolesTab />
-        </TabsContent>
-        <TabsContent value="property-types">
-          <PropertyTypesTab />
-        </TabsContent>
-        <TabsContent value="property-locations">
-          <PropertyLocationsTab />
-        </TabsContent>
-        <TabsContent value="location-attributes">
-          <PropertyLocationAttributesTab />
-        </TabsContent>
-        <TabsContent value="job-types">
-          <JobTypesTab />
-        </TabsContent>
-        <TabsContent value="inspector-statuses">
-          <InspectorAttributeStatusesTab />
-        </TabsContent>
-        <TabsContent value="technician-statuses">
-          <TechnicianAttributeStatusesTab />
-        </TabsContent>
-      </Tabs>
+      <div className="flex gap-6">
+        {/* Sidebar Navigation */}
+        <aside className="w-64 flex-shrink-0">
+          <nav className="space-y-6">
+            {settingsCategories.map((category, categoryIndex) => (
+              <div key={categoryIndex}>
+                <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                  {category.title}
+                </h3>
+                <ul className="space-y-1">
+                  {category.items.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        onClick={() => setActiveTab(item.id)}
+                        className={`
+                          w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors
+                          ${
+                            activeTab === item.id
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          }
+                        `}
+                      >
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Main Content */}
+        <div className="flex-1 min-w-0">
+          {activeComponent}
+        </div>
+      </div>
     </motion.div>
   )
 }
