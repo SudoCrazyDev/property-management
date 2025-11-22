@@ -4,6 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { Plus, Edit, Trash2, Loader2 } from "lucide-react"
 import { useRoles } from "@/hooks/use-roles"
+import { usePropertyTypes } from "@/hooks/use-property-types"
+import { usePropertyLocations } from "@/hooks/use-property-locations"
+import { useLocationAttributes } from "@/hooks/use-location-attributes"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -381,9 +384,14 @@ function RolesTab() {
 }
 
 function PropertyTypesTab() {
-  const [propertyTypes, setPropertyTypes] = useState(initialPropertyTypes)
+  const { propertyTypes, loading, error, createPropertyType, updatePropertyType, deletePropertyType } = usePropertyTypes()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingType, setEditingType] = useState(null)
+  const [typeToDelete, setTypeToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(propertyTypeSchema),
@@ -395,7 +403,7 @@ function PropertyTypesTab() {
   const handleOpenDialog = (type = null) => {
     setEditingType(type)
     if (type) {
-      form.reset({ name: type })
+      form.reset({ name: type.name })
     } else {
       form.reset()
     }
@@ -408,21 +416,81 @@ function PropertyTypesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingType) {
-      setPropertyTypes(
-        propertyTypes.map((t) => (t === editingType ? data.name : t))
-      )
-    } else {
-      setPropertyTypes([...propertyTypes, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingType) {
+        const result = await updatePropertyType(editingType.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property type "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update property type. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createPropertyType(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property type "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create property type. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (type) => {
-    // Placeholder - no API yet
-    setPropertyTypes(propertyTypes.filter((t) => t !== type))
+  const handleDeleteClick = (type) => {
+    setTypeToDelete(type)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!typeToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deletePropertyType(typeToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Property type "${typeToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setTypeToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete property type. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setTypeToDelete(null)
   }
 
   return (
@@ -477,15 +545,22 @@ function PropertyTypesTab() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingType
-                      ? "Update Property Type"
-                      : "Create Property Type"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingType ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingType ? "Update" : "Create"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -494,61 +569,115 @@ function PropertyTypesTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Property Type Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {propertyTypes.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No property types found.
-                    </TableCell>
+                    <TableHead>Property Type Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  propertyTypes.map((type) => (
-                    <TableRow key={type}>
-                      <TableCell className="font-medium">{type}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(type)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(type)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {propertyTypes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No property types found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    propertyTypes.map((type) => (
+                      <TableRow key={type.id}>
+                        <TableCell className="font-medium">{type.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(type)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(type)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Property Type</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{typeToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function PropertyLocationsTab() {
-  const [locations, setLocations] = useState(initialPropertyLocations)
+  const { propertyLocations, loading, error, createPropertyLocation, updatePropertyLocation, deletePropertyLocation } = usePropertyLocations()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingLocation, setEditingLocation] = useState(null)
+  const [locationToDelete, setLocationToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(propertyLocationSchema),
@@ -560,7 +689,7 @@ function PropertyLocationsTab() {
   const handleOpenDialog = (location = null) => {
     setEditingLocation(location)
     if (location) {
-      form.reset({ name: location })
+      form.reset({ name: location.name })
     } else {
       form.reset()
     }
@@ -573,19 +702,81 @@ function PropertyLocationsTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingLocation) {
-      setLocations(locations.map((l) => (l === editingLocation ? data.name : l)))
-    } else {
-      setLocations([...locations, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingLocation) {
+        const result = await updatePropertyLocation(editingLocation.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property location "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update property location. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createPropertyLocation(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property location "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create property location. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (location) => {
-    // Placeholder - no API yet
-    setLocations(locations.filter((l) => l !== location))
+  const handleDeleteClick = (location) => {
+    setLocationToDelete(location)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!locationToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deletePropertyLocation(locationToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Property location "${locationToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setLocationToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete property location. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setLocationToDelete(null)
   }
 
   return (
@@ -640,15 +831,22 @@ function PropertyLocationsTab() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingLocation
-                      ? "Update Location"
-                      : "Create Location"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingLocation ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingLocation ? "Update" : "Create"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -657,61 +855,115 @@ function PropertyLocationsTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Location Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {locations.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No locations found.
-                    </TableCell>
+                    <TableHead>Location Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  locations.map((location) => (
-                    <TableRow key={location}>
-                      <TableCell className="font-medium">{location}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(location)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(location)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {propertyLocations.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No locations found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    propertyLocations.map((location) => (
+                      <TableRow key={location.id}>
+                        <TableCell className="font-medium">{location.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(location)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(location)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Property Location</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{locationToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
 function PropertyLocationAttributesTab() {
-  const [attributes, setAttributes] = useState(initialPropertyLocationAttributes)
+  const { locationAttributes, loading, error, createLocationAttribute, updateLocationAttribute, deleteLocationAttribute } = useLocationAttributes()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingAttribute, setEditingAttribute] = useState(null)
+  const [attributeToDelete, setAttributeToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(propertyLocationAttributeSchema),
@@ -723,7 +975,7 @@ function PropertyLocationAttributesTab() {
   const handleOpenDialog = (attribute = null) => {
     setEditingAttribute(attribute)
     if (attribute) {
-      form.reset({ name: attribute })
+      form.reset({ name: attribute.name })
     } else {
       form.reset()
     }
@@ -736,21 +988,81 @@ function PropertyLocationAttributesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingAttribute) {
-      setAttributes(
-        attributes.map((a) => (a === editingAttribute ? data.name : a))
-      )
-    } else {
-      setAttributes([...attributes, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingAttribute) {
+        const result = await updateLocationAttribute(editingAttribute.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Location attribute "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update location attribute. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createLocationAttribute(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Location attribute "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create location attribute. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (attribute) => {
-    // Placeholder - no API yet
-    setAttributes(attributes.filter((a) => a !== attribute))
+  const handleDeleteClick = (attribute) => {
+    setAttributeToDelete(attribute)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!attributeToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteLocationAttribute(attributeToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Location attribute "${attributeToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setAttributeToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete location attribute. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setAttributeToDelete(null)
   }
 
   return (
@@ -805,15 +1117,22 @@ function PropertyLocationAttributesTab() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingAttribute
-                      ? "Update Attribute"
-                      : "Create Attribute"}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingAttribute ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingAttribute ? "Update" : "Create"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -822,53 +1141,102 @@ function PropertyLocationAttributesTab() {
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Attribute Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attributes.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No attributes found.
-                    </TableCell>
+                    <TableHead>Attribute Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  attributes.map((attribute) => (
-                    <TableRow key={attribute}>
-                      <TableCell className="font-medium">{attribute}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(attribute)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(attribute)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {locationAttributes.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No attributes found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    locationAttributes.map((attribute) => (
+                      <TableRow key={attribute.id}>
+                        <TableCell className="font-medium">{attribute.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(attribute)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(attribute)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Location Attribute</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{attributeToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
