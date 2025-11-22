@@ -422,17 +422,8 @@ function PropertyTypesTab() {
 
 function PropertyLocationsTab() {
   const [locations, setLocations] = useState(initialPropertyLocations)
-  const [attributes] = useState(initialPropertyLocationAttributes)
-  const [locationAttributes, setLocationAttributes] = useState({
-    "Entryway/Hallways": ["Walls", "Baseboards and Trim", "Flooring", "Doors", "Light Fixtures"],
-    "Living Room": ["Walls", "Baseboards and Trim", "Flooring", "Windows", "Blinds/Shades", "Light Fixtures"],
-    "Dining Area": ["Walls", "Baseboards and Trim", "Flooring", "Windows", "Light Fixtures"],
-    "Kitchen": ["Walls", "Baseboards and Trim", "Flooring", "Doors", "Windows", "Light Fixtures", "Electrical Outlets", "HVAC Vents"],
-  })
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isAttributeDialogOpen, setIsAttributeDialogOpen] = useState(false)
   const [editingLocation, setEditingLocation] = useState(null)
-  const [selectedLocationForAttributes, setSelectedLocationForAttributes] = useState(null)
 
   const form = useForm({
     resolver: zodResolver(propertyLocationSchema),
@@ -457,37 +448,12 @@ function PropertyLocationsTab() {
     form.reset()
   }
 
-  const handleOpenAttributeDialog = (location) => {
-    setSelectedLocationForAttributes(location)
-    setIsAttributeDialogOpen(true)
-  }
-
-  const handleCloseAttributeDialog = () => {
-    setIsAttributeDialogOpen(false)
-    setSelectedLocationForAttributes(null)
-  }
-
   const onSubmit = (data) => {
     // Placeholder - no API yet
     if (editingLocation) {
-      const oldName = editingLocation
-      const newName = data.name
-      // Update location name and migrate attributes
-      if (locationAttributes[oldName]) {
-        setLocationAttributes((prev) => {
-          const updated = { ...prev }
-          updated[newName] = updated[oldName]
-          delete updated[oldName]
-          return updated
-        })
-      }
       setLocations(locations.map((l) => (l === editingLocation ? data.name : l)))
     } else {
       setLocations([...locations, data.name])
-      setLocationAttributes((prev) => ({
-        ...prev,
-        [data.name]: [],
-      }))
     }
     handleCloseDialog()
   }
@@ -495,21 +461,6 @@ function PropertyLocationsTab() {
   const handleDelete = (location) => {
     // Placeholder - no API yet
     setLocations(locations.filter((l) => l !== location))
-    setLocationAttributes((prev) => {
-      const updated = { ...prev }
-      delete updated[location]
-      return updated
-    })
-  }
-
-  const handleUpdateAttributes = (selectedAttributes) => {
-    if (selectedLocationForAttributes) {
-      setLocationAttributes((prev) => ({
-        ...prev,
-        [selectedLocationForAttributes]: selectedAttributes,
-      }))
-    }
-    handleCloseAttributeDialog()
   }
 
   return (
@@ -518,7 +469,7 @@ function PropertyLocationsTab() {
         <div>
           <h2 className="text-2xl font-bold">Property Locations</h2>
           <p className="text-muted-foreground">
-            Manage property locations and their attributes
+            Manage available property location types. These can be assigned to individual properties.
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -541,7 +492,7 @@ function PropertyLocationsTab() {
               <DialogDescription>
                 {editingLocation
                   ? "Update the property location name below."
-                  : "Enter a name for the new property location."}
+                  : "Enter a name for the new property location type."}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -588,14 +539,13 @@ function PropertyLocationsTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Location Name</TableHead>
-                  <TableHead>Attributes</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {locations.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="h-24 text-center">
+                    <TableCell colSpan={2} className="h-24 text-center">
                       No locations found.
                     </TableCell>
                   </TableRow>
@@ -603,31 +553,8 @@ function PropertyLocationsTab() {
                   locations.map((location) => (
                     <TableRow key={location}>
                       <TableCell className="font-medium">{location}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {(locationAttributes[location] || []).length > 0 ? (
-                            (locationAttributes[location] || []).map((attr) => (
-                              <span
-                                key={attr}
-                                className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary"
-                              >
-                                {attr}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-sm text-muted-foreground">No attributes</span>
-                          )}
-                        </div>
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenAttributeDialog(location)}
-                          >
-                            Manage Attributes
-                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -652,68 +579,6 @@ function PropertyLocationsTab() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Manage Attributes Dialog */}
-      <Dialog open={isAttributeDialogOpen} onOpenChange={setIsAttributeDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Manage Attributes for {selectedLocationForAttributes}</DialogTitle>
-            <DialogDescription>
-              Select the attributes that belong to this location.
-            </DialogDescription>
-          </DialogHeader>
-          <ManageAttributesDialog
-            location={selectedLocationForAttributes}
-            allAttributes={attributes}
-            selectedAttributes={locationAttributes[selectedLocationForAttributes] || []}
-            onSave={handleUpdateAttributes}
-            onClose={handleCloseAttributeDialog}
-          />
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-function ManageAttributesDialog({ location, allAttributes, selectedAttributes, onSave, onClose }) {
-  const [selected, setSelected] = useState(selectedAttributes || [])
-
-  const handleToggle = (attribute) => {
-    setSelected((prev) =>
-      prev.includes(attribute)
-        ? prev.filter((a) => a !== attribute)
-        : [...prev, attribute]
-    )
-  }
-
-  const handleSave = () => {
-    onSave(selected)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="max-h-64 overflow-y-auto space-y-2">
-        {allAttributes.map((attribute) => (
-          <label
-            key={attribute}
-            className="flex items-center space-x-2 p-2 rounded-md hover:bg-accent cursor-pointer"
-          >
-            <input
-              type="checkbox"
-              checked={selected.includes(attribute)}
-              onChange={() => handleToggle(attribute)}
-              className="rounded border-gray-300"
-            />
-            <span className="text-sm">{attribute}</span>
-          </label>
-        ))}
-      </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button onClick={handleSave}>Save Attributes</Button>
-      </DialogFooter>
     </div>
   )
 }
@@ -769,7 +634,7 @@ function PropertyLocationAttributesTab() {
         <div>
           <h2 className="text-2xl font-bold">Property Location Attributes</h2>
           <p className="text-muted-foreground">
-            Manage attributes that can be assigned to property locations
+            Manage available attribute types. These will be assigned to specific locations during inspections.
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

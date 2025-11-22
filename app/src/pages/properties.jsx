@@ -37,12 +37,26 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Card, CardContent } from "@/components/ui/card"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { motion } from "motion/react"
 import { STATES, getCountiesForState, getCitiesForCounty } from "@/lib/locations"
 import { ImageGallery } from "@/components/ui/image-gallery"
 
 const PROPERTY_TYPES = ["House", "Apartment", "Condo", "Duplex", "Multi-Family", "Commercial"]
 const STATUSES = ["Active", "Inactive", "Maintenance"]
+// Available property locations - in production, this would come from Settings/API
+const AVAILABLE_LOCATIONS = [
+  "Entryway/Hallways",
+  "Living Room",
+  "Dining Area",
+  "Kitchen",
+  "Bedroom",
+  "Bathroom",
+  "Basement",
+  "Garage",
+  "Attic",
+  "Laundry Room",
+]
 
 const propertySchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -54,6 +68,7 @@ const propertySchema = z.object({
   zipCode: z.string().min(1, "Zip code is required"),
   county: z.string().min(1, "County is required"),
   status: z.enum(["Active", "Inactive", "Maintenance"]),
+  locations: z.array(z.string()).optional().default([]),
   gallery: z.array(z.any()).optional().default([]),
 })
 
@@ -75,6 +90,7 @@ const mockProperties = Array.from({ length: 35 }, (_, i) => {
     zipCode: `${10000 + i * 100}`,
     county: `${cities[i % cities.length]} County`,
     status: statuses[i % statuses.length],
+    locations: AVAILABLE_LOCATIONS.slice(0, Math.floor(Math.random() * 5) + 3), // Random 3-7 locations
     gallery: [], // Empty gallery for mock data
   }
 })
@@ -101,6 +117,7 @@ export function PropertiesPage() {
       zipCode: "",
       county: "",
       status: "Active",
+      locations: [],
       gallery: [],
     },
   })
@@ -147,6 +164,8 @@ export function PropertiesPage() {
         zipCode: property.zipCode,
         county: property.county,
         status: property.status,
+        locations: property.locations || [],
+        gallery: property.gallery || [],
       })
     } else {
       form.reset()
@@ -264,6 +283,23 @@ export function PropertiesPage() {
                     </FormMessage>
                   </FormItem>
                 </div>
+                <FormItem>
+                  <FormLabel>Property Locations</FormLabel>
+                  <FormControl>
+                    <MultiSelect
+                      options={AVAILABLE_LOCATIONS}
+                      selected={form.watch("locations") || []}
+                      onChange={(locations) => {
+                        form.setValue("locations", locations)
+                        form.trigger("locations")
+                      }}
+                      placeholder="Select property locations..."
+                    />
+                  </FormControl>
+                  <FormMessage>
+                    {form.formState.errors.locations?.message}
+                  </FormMessage>
+                </FormItem>
                 <FormItem>
                   <FormLabel htmlFor="streetAddress">Street Address</FormLabel>
                   <FormControl>
