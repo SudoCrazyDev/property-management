@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { 
   ChevronDown, 
   ChevronRight, 
@@ -10,7 +10,13 @@ import {
   XCircle,
   AlertCircle,
   MinusCircle,
-  Trash2
+  Trash2,
+  Loader2,
+  Wifi,
+  WifiOff,
+  Cloud,
+  CloudOff,
+  Camera
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,21 +31,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion, AnimatePresence } from "motion/react"
 import { cn } from "@/lib/utils"
-
-// Mock data - replace with API calls later
-const INSPECTOR_ID = 1 // Current inspector ID
-const INSPECTOR_STATUSES = ["Pass", "Fail", "N/A", "Needs Attention"]
-const AVAILABLE_LOCATION_ATTRIBUTES = [
-  "Walls",
-  "Baseboards and Trim",
-  "Flooring",
-  "Doors",
-  "Windows",
-  "Blinds/Shades",
-  "Light Fixtures",
-  "Electrical Outlets",
-  "HVAC Vents",
-]
+import { useJobs } from "@/hooks/use-jobs"
+import { useAuth } from "@/hooks/use-auth"
+import { useProperties } from "@/hooks/use-properties"
+import { usePropertyLocations } from "@/hooks/use-property-locations"
+import { useLocationAttributes } from "@/hooks/use-location-attributes"
+import { useInspectorStatuses } from "@/hooks/use-inspector-statuses"
+import { useOnlineStatus } from "@/hooks/use-online-status"
+import { useDraft } from "@/hooks/use-draft"
+import { storeFileOffline, deleteFileOffline } from "@/lib/draft-storage"
+import { uploadQueue } from "@/lib/upload-queue"
+import { supabase } from "@/lib/supabase"
 
 // Mock jobs assigned to inspector
 const mockJobs = [
@@ -161,13 +163,53 @@ const mockJobs = [
   },
 ]
 
-function FileUploadArea({ files, onFilesChange, attributeId }) {
+function FileUploadArea({ files, onFilesChange, attributeId, uploadStatuses = {} }) {
+  const { isOnline = true } = useOnlineStatus() || {}
+  const fileInputRef = useRef(null)
+  const cameraInputRef = useRef(null)
+  
   const handleFileSelect = (e) => {
     const newFiles = Array.from(e.target.files)
-    onFilesChange([...files, ...newFiles])
+    if (newFiles.length > 0) {
+      onFilesChange([...files, ...newFiles])
+    }
+    // Reset input so same file can be selected again
+    if (e.target) {
+      e.target.value = ""
+    }
   }
 
-  const handleRemoveFile = (index) => {
+  const handleCameraClick = () => {
+    if (cameraInputRef.current) {
+      cameraInputRef.current.click()
+    }
+  }
+
+  const handleFileClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click()
+    }
+  }
+
+  const handleRemoveFile = async (index) => {
+    const fileToRemove = files[index]
+    
+    // If file has offline storage, delete it from IndexedDB
+    if (fileToRemove?.offlineId) {
+      try {
+        const { deleteFileOffline } = await import("@/lib/draft-storage")
+        await deleteFileOffline(fileToRemove.offlineId)
+      } catch (error) {
+        console.error("Error deleting file from IndexedDB:", error)
+      }
+    }
+    
+    // Remove from upload queue if it's queued
+    if (uploadStatuses[fileToRemove?.name]?.queueId) {
+      const { uploadQueue } = await import("@/lib/upload-queue")
+      uploadQueue.remove(uploadStatuses[fileToRemove.name].queueId)
+    }
+    
     onFilesChange(files.filter((_, i) => i !== index))
   }
 
@@ -183,6 +225,58 @@ function FileUploadArea({ files, onFilesChange, attributeId }) {
     onFilesChange([...files, ...newFiles])
   }
 
+  const getFileStatusIcon = (file) => {
+    const status = uploadStatuses[file.name]
+    if (!status) {
+      if (!isOnline && file instanceof File) {
+        return <CloudOff className="h-4 w-4 text-yellow-600" />
+      }
+      if (file.uploaded || typeof file === "string") {
+        return <CheckCircle2 className="h-4 w-4 text-green-600" />
+      }
+      return null
+    }
+
+    switch (status.status) {
+      case "uploading":
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-green-600" />
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-600" />
+      case "pending":
+        return <Cloud className="h-4 w-4 text-yellow-600" />
+      default:
+        return null
+    }
+  }
+
+  const getFileStatusText = (file) => {
+    const status = uploadStatuses[file.name]
+    if (!status) {
+      if (!isOnline && file instanceof File) {
+        return "Waiting for connection"
+      }
+      if (file.uploaded || typeof file === "string") {
+        return "Uploaded"
+      }
+      return ""
+    }
+
+    switch (status.status) {
+      case "uploading":
+        return `Uploading... ${status.progress || 0}%`
+      case "completed":
+        return "Uploaded"
+      case "failed":
+        return "Upload failed - will retry"
+      case "pending":
+        return "Queued for upload"
+      default:
+        return ""
+    }
+  }
+
   return (
     <div
       className="mt-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-4 md:p-6 transition-colors hover:border-primary/50 active:border-primary"
@@ -191,27 +285,62 @@ function FileUploadArea({ files, onFilesChange, attributeId }) {
     >
       <div className="flex flex-col items-center justify-center gap-3">
         <Upload className="h-10 w-10 md:h-8 md:w-8 text-muted-foreground" />
-        <div className="text-center">
-          <label
-            htmlFor={`file-upload-${attributeId}`}
-            className="cursor-pointer text-base md:text-sm font-medium text-primary hover:underline active:opacity-80"
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full">
+          {/* Camera Button */}
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 sm:flex-initial gap-2 h-10"
+            onClick={handleCameraClick}
           >
-            Tap to upload
-          </label>
-          <span className="hidden md:inline text-sm text-muted-foreground"> or drag and drop</span>
+            <Camera className="h-4 w-4" />
+            <span className="text-sm">Take Photo</span>
+          </Button>
+          
+          {/* File Upload Button */}
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 sm:flex-initial gap-2 h-10"
+            onClick={handleFileClick}
+          >
+            <Upload className="h-4 w-4" />
+            <span className="text-sm">Choose Files</span>
+          </Button>
         </div>
+        
+        {/* Hidden file inputs */}
+        {/* Camera input - opens camera directly on mobile devices */}
         <input
+          ref={cameraInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileSelect}
+          accept="image/*"
+          capture="environment"
+        />
+        <input
+          ref={fileInputRef}
           id={`file-upload-${attributeId}`}
           type="file"
           multiple
           className="hidden"
           onChange={handleFileSelect}
           accept="image/*,.pdf,.doc,.docx"
-          capture="environment"
         />
+        
         <p className="text-xs md:text-xs text-muted-foreground text-center">
           Images, PDF, DOC, DOCX (max 10MB each)
         </p>
+        <p className="text-xs text-muted-foreground/70 text-center mt-1">
+          Camera works best on mobile devices
+        </p>
+        {!isOnline && (
+          <p className="text-xs text-yellow-600 text-center mt-1">
+            <WifiOff className="h-3 w-3 inline mr-1" />
+            Offline mode - files will upload when connection is restored
+          </p>
+        )}
       </div>
       {files.length > 0 && (
         <div className="mt-4 space-y-2">
@@ -221,10 +350,19 @@ function FileUploadArea({ files, onFilesChange, attributeId }) {
               className="flex items-center justify-between rounded-md bg-muted/50 p-3 md:p-2 gap-2"
             >
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <FileImage className="h-5 w-5 md:h-4 md:w-4 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm md:text-sm truncate">
-                  {file.name || (typeof file === "string" ? file : "File")}
-                </span>
+                {getFileStatusIcon(file) || (
+                  <FileImage className="h-5 w-5 md:h-4 md:w-4 text-muted-foreground flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm md:text-sm truncate">
+                    {file.name || (typeof file === "string" ? file : "File")}
+                  </div>
+                  {getFileStatusText(file) && (
+                    <div className="text-xs text-muted-foreground">
+                      {getFileStatusText(file)}
+                    </div>
+                  )}
+                </div>
               </div>
               <Button
                 type="button"
@@ -243,10 +381,12 @@ function FileUploadArea({ files, onFilesChange, attributeId }) {
   )
 }
 
-function AttributeCard({ attribute, locationName, onUpdate, onDelete }) {
+function AttributeCard({ attribute, locationName, onUpdate, onDelete, inspectorStatuses, jobId }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [status, setStatus] = useState(attribute.status || "")
   const [files, setFiles] = useState(attribute.files || [])
+  const [fileUploadStatuses, setFileUploadStatuses] = useState({}) // Track upload status for each file
+  const { isOnline = true } = useOnlineStatus() || {}
 
   const handleStatusChange = (newStatus) => {
     setStatus(newStatus)
@@ -257,43 +397,137 @@ function AttributeCard({ attribute, locationName, onUpdate, onDelete }) {
     })
   }
 
-  const handleFilesChange = (newFiles) => {
-    setFiles(newFiles)
+  const handleFilesChange = async (newFiles) => {
+    // Always store files locally first (in IndexedDB), regardless of online status
+    // This ensures files are saved even if connection is lost
+    const processedFiles = await Promise.all(
+      newFiles.map(async (file) => {
+        // If it's a File object, store it offline first
+        if (file instanceof File) {
+          try {
+            const { storeFileOffline } = await import("@/lib/draft-storage")
+            const fileId = await storeFileOffline(jobId, attribute.id, file)
+            return {
+              ...file,
+              offlineId: fileId,
+              uploadStatus: "pending",
+              uploaded: false, // Mark as not uploaded yet
+            }
+          } catch (error) {
+            console.error("Error storing file offline:", error)
+            return file
+          }
+        }
+        return file
+      })
+    )
+
+    setFiles(processedFiles)
     onUpdate({
       ...attribute,
       status,
-      files: newFiles,
+      files: processedFiles,
     })
+
+    // Don't upload automatically - files will be uploaded when user clicks "Save as Draft" or "For Technician"
   }
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "Pass":
-        return <CheckCircle2 className="h-4 w-4 text-green-600" />
-      case "Fail":
-        return <XCircle className="h-4 w-4 text-red-600" />
-      case "Needs Attention":
-        return <AlertCircle className="h-4 w-4 text-yellow-600" />
-      case "N/A":
-        return <MinusCircle className="h-4 w-4 text-gray-400" />
-      default:
-        return null
-    }
+  const queueFileUpload = (file) => {
+    const queueItemId = uploadQueue.enqueue(
+      {
+        file,
+        fileId: file.offlineId,
+        jobId,
+        attributeId: attribute.id,
+      },
+      (progress) => {
+        // Progress callback
+        setFileUploadStatuses((prev) => ({
+          ...prev,
+          [file.name]: { status: "uploading", progress: progress.progress },
+        }))
+      },
+      async (uploadedPath) => {
+        // Complete callback
+        setFileUploadStatuses((prev) => ({
+          ...prev,
+          [file.name]: { status: "completed", path: uploadedPath },
+        }))
+        
+        // Delete file from IndexedDB after successful upload
+        if (file.offlineId) {
+          try {
+            const { deleteFileOffline } = await import("@/lib/draft-storage")
+            await deleteFileOffline(file.offlineId)
+          } catch (error) {
+            console.error("Error deleting file from IndexedDB after upload:", error)
+          }
+        }
+        
+        // Update file in files array - replace File object with path string
+        const updatedFiles = files.map((f) =>
+          f === file ? uploadedPath : f
+        )
+        setFiles(updatedFiles)
+        onUpdate({
+          ...attribute,
+          status,
+          files: updatedFiles,
+        })
+      },
+      (error) => {
+        // Error callback
+        setFileUploadStatuses((prev) => ({
+          ...prev,
+          [file.name]: { status: "failed", error },
+        }))
+      }
+    )
+
+    // Track upload status
+    setFileUploadStatuses((prev) => ({
+      ...prev,
+      [file.name]: { status: "pending", queueId: queueItemId },
+    }))
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Pass":
-        return "bg-green-100 text-green-800 border-green-300"
-      case "Fail":
-        return "bg-red-100 text-red-800 border-red-300"
-      case "Needs Attention":
-        return "bg-yellow-100 text-yellow-800 border-yellow-300"
-      case "N/A":
-        return "bg-gray-100 text-gray-800 border-gray-300"
-      default:
-        return "bg-muted text-muted-foreground border-border"
+  // Don't auto-upload when coming back online - files will be uploaded when user saves/submits
+
+  const getStatusIcon = (statusName) => {
+    // Try to match status name to common patterns
+    if (!statusName) return null
+    const lowerStatus = statusName.toLowerCase()
+    if (lowerStatus.includes("pass") || lowerStatus.includes("good")) {
+      return <CheckCircle2 className="h-4 w-4 text-green-600" />
     }
+    if (lowerStatus.includes("fail") || lowerStatus.includes("bad")) {
+      return <XCircle className="h-4 w-4 text-red-600" />
+    }
+    if (lowerStatus.includes("attention") || lowerStatus.includes("warning")) {
+      return <AlertCircle className="h-4 w-4 text-yellow-600" />
+    }
+    if (lowerStatus.includes("n/a") || lowerStatus.includes("not applicable")) {
+      return <MinusCircle className="h-4 w-4 text-gray-400" />
+    }
+    return null
+  }
+
+  const getStatusColor = (statusName) => {
+    if (!statusName) return "bg-muted text-muted-foreground border-border"
+    const lowerStatus = statusName.toLowerCase()
+    if (lowerStatus.includes("pass") || lowerStatus.includes("good")) {
+      return "bg-green-100 text-green-800 border-green-300"
+    }
+    if (lowerStatus.includes("fail") || lowerStatus.includes("bad")) {
+      return "bg-red-100 text-red-800 border-red-300"
+    }
+    if (lowerStatus.includes("attention") || lowerStatus.includes("warning")) {
+      return "bg-yellow-100 text-yellow-800 border-yellow-300"
+    }
+    if (lowerStatus.includes("n/a") || lowerStatus.includes("not applicable")) {
+      return "bg-gray-100 text-gray-800 border-gray-300"
+    }
+    return "bg-muted text-muted-foreground border-border"
   }
 
   return (
@@ -359,30 +593,43 @@ function AttributeCard({ attribute, locationName, onUpdate, onDelete }) {
                 <label className="mb-2 md:mb-2 block text-sm md:text-sm font-medium">
                   Status
                 </label>
-                <Select value={status} onValueChange={handleStatusChange}>
-                  <SelectTrigger className="h-11 md:h-10 text-base md:text-sm">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INSPECTOR_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} className="text-base md:text-sm py-3 md:py-2">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(s)}
-                          {s}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-wrap gap-2">
+                  {inspectorStatuses.map((s) => {
+                    const isSelected = status === s.name
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => handleStatusChange(s.name)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 md:px-2.5 md:py-1.5 text-xs md:text-xs font-medium transition-all",
+                          "hover:scale-105 active:scale-95",
+                          isSelected
+                            ? getStatusColor(s.name) + " shadow-sm ring-2 ring-primary/20"
+                            : "bg-background text-muted-foreground border-muted-foreground/30 hover:border-primary/50 hover:text-foreground"
+                        )}
+                      >
+                        {getStatusIcon(s.name)}
+                        <span>{s.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label className="mb-2 md:mb-2 block text-sm md:text-sm font-medium">
                   Attachments ({files.length})
+                  {!isOnline && (
+                    <span className="ml-2 text-xs text-yellow-600 font-normal">
+                      (Offline - files will upload when connection is restored)
+                    </span>
+                  )}
                 </label>
                 <FileUploadArea
                   files={files}
                   onFilesChange={handleFilesChange}
                   attributeId={attribute.id}
+                  uploadStatuses={fileUploadStatuses}
                 />
               </div>
             </CardContent>
@@ -393,12 +640,14 @@ function AttributeCard({ attribute, locationName, onUpdate, onDelete }) {
   )
 }
 
-function LocationSection({ locationName, attributes, availableAttributes, onUpdate }) {
+function LocationSection({ locationName, attributes, availableAttributes, onUpdate, inspectorStatuses, canAddAttributes = false, jobId }) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [showAddAttribute, setShowAddAttribute] = useState(false)
   const [newAttributeName, setNewAttributeName] = useState("")
 
   const handleAddAttribute = () => {
+    if (!canAddAttributes) return // Prevent adding if not allowed
+    
     if (newAttributeName && !attributes.find((a) => a.name === newAttributeName)) {
       const newAttribute = {
         id: Date.now(),
@@ -464,6 +713,8 @@ function LocationSection({ locationName, attributes, availableAttributes, onUpda
                   locationName={locationName}
                   onUpdate={handleUpdateAttribute}
                   onDelete={() => handleRemoveAttribute(attribute.id)}
+                  inspectorStatuses={inspectorStatuses}
+                  jobId={jobId}
                 />
               ))}
               {showAddAttribute ? (
@@ -473,8 +724,9 @@ function LocationSection({ locationName, attributes, availableAttributes, onUpda
                       <Select
                         value={newAttributeName}
                         onValueChange={setNewAttributeName}
+                        disabled={!canAddAttributes}
                       >
-                        <SelectTrigger className="h-11 md:h-10 text-base md:text-sm">
+                        <SelectTrigger className="h-11 md:h-10 text-base md:text-sm" disabled={!canAddAttributes}>
                           <SelectValue placeholder="Select attribute" />
                         </SelectTrigger>
                         <SelectContent>
@@ -491,7 +743,7 @@ function LocationSection({ locationName, attributes, availableAttributes, onUpda
                           size="default"
                           className="h-11 md:h-9 text-base md:text-sm flex-1"
                           onClick={handleAddAttribute}
-                          disabled={!newAttributeName}
+                          disabled={!newAttributeName || !canAddAttributes}
                         >
                           Add
                         </Button>
@@ -517,7 +769,7 @@ function LocationSection({ locationName, attributes, availableAttributes, onUpda
                   variant="outline"
                   className="w-full border-dashed h-11 md:h-9 text-base md:text-sm"
                   onClick={() => setShowAddAttribute(true)}
-                  disabled={unselectedAttributes.length === 0}
+                  disabled={!canAddAttributes || unselectedAttributes.length === 0}
                 >
                   <Plus className="mr-2 h-5 w-5 md:h-4 md:w-4" />
                   Add Attribute
@@ -531,8 +783,12 @@ function LocationSection({ locationName, attributes, availableAttributes, onUpda
   )
 }
 
-function JobCard({ job, onUpdate }) {
+function JobCard({ job, onUpdate, onStartJob, locationAttributes, inspectorStatuses, propertyLocations, onUpdateJobStatus }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isStartingJob, setIsStartingJob] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const { isOnline = true } = useOnlineStatus() || {}
+  const { saveDraft, deleteDraft } = useDraft(job.id, job)
 
   const handleLocationUpdate = (locationName, attributes) => {
     const updatedAttributes = {
@@ -545,37 +801,342 @@ function JobCard({ job, onUpdate }) {
     })
   }
 
-  const handleSaveAsDraft = () => {
-    // Placeholder - replace with API call later
-    console.log("Saving as draft:", job)
-    // Update job status to draft or similar
-    onUpdate({
-      ...job,
-      status: "Draft",
+  const handleStartJob = async () => {
+    if (onStartJob && !isStartingJob) {
+      setIsStartingJob(true)
+      try {
+        await onStartJob(job.id)
+        // Keep the card expanded after starting
+        setIsExpanded(true)
+      } catch (error) {
+        console.error("Error starting job:", error)
+      } finally {
+        setIsStartingJob(false)
+      }
+    }
+  }
+
+  const uploadAllFiles = async () => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (!isOnline) {
+          reject(new Error("Offline - cannot upload files"))
+          return
+        }
+        
+        const { uploadQueue } = await import("@/lib/upload-queue")
+        
+        // Collect all files from all attributes that need uploading
+        // Group by location and attribute for later insertion
+        const filesByAttribute = new Map() // key: `${locationName}|${attributeName}`, value: { locationName, attributeName, files: [] }
+        
+        console.log("Collecting files from job.attributes:", job.attributes)
+        
+        Object.entries(job.attributes || {}).forEach(([locationName, locationAttributes]) => {
+          console.log(`Processing location: ${locationName}`, locationAttributes)
+          locationAttributes.forEach((attribute) => {
+            const key = `${locationName}|${attribute.name}`
+            if (!filesByAttribute.has(key)) {
+              filesByAttribute.set(key, {
+                locationName,
+                attributeName: attribute.name,
+                attributeId: attribute.id,
+                status: attribute.status || null,
+                files: [],
+              })
+            }
+            
+            if (attribute.files && attribute.files.length > 0) {
+              console.log(`Processing ${attribute.files.length} files for attribute: ${attribute.name}`)
+              attribute.files.forEach((file, index) => {
+                console.log(`File ${index}:`, file, "Type:", typeof file, "Is File:", file instanceof File, "Has offlineId:", file?.offlineId, "Uploaded:", file?.uploaded)
+                
+                // Check if it's already a string (uploaded path) - highest priority
+                if (typeof file === "string") {
+                  console.log(`File already uploaded: ${file}`)
+                  filesByAttribute.get(key).files.push({
+                    path: file,
+                    uploaded: true,
+                  })
+                }
+                // Check if file has offlineId and is not uploaded (needs upload)
+                // This covers both File instances and objects stored in IndexedDB
+                else if (file && file.offlineId && !file.uploaded) {
+                  console.log(`File needs upload: ${file.name || "unknown"} (offlineId: ${file.offlineId})`)
+                  filesByAttribute.get(key).files.push({
+                    file: file instanceof File ? file : null, // Will retrieve from IndexedDB if not File instance
+                    fileId: file.offlineId,
+                    uploaded: false,
+                  })
+                } else {
+                  console.warn(`Skipping file - unknown format or already uploaded:`, file)
+                }
+              })
+            }
+          })
+        })
+        
+        console.log("Files by attribute:", Array.from(filesByAttribute.entries()))
+        
+        // Track upload progress
+      const uploadPromises = []
+      const uploadedPaths = new Map() // key: `${locationName}|${attributeName}`, value: string[]
+      
+      filesByAttribute.forEach((attrData, key) => {
+        attrData.files.forEach((fileItem) => {
+          if (fileItem.uploaded) {
+            // Already uploaded, add to paths
+            if (!uploadedPaths.has(key)) {
+              uploadedPaths.set(key, [])
+            }
+            uploadedPaths.get(key).push(fileItem.path)
+          } else {
+            // Need to upload
+            const uploadPromise = new Promise((fileResolve, fileReject) => {
+              uploadQueue.enqueue(
+                {
+                  file: fileItem.file,
+                  fileId: fileItem.fileId,
+                  jobId: job.id,
+                  attributeId: attrData.attributeId,
+                  locationName: attrData.locationName,
+                  attributeName: attrData.attributeName,
+                },
+                () => {}, // Progress callback
+                async (uploadedPath) => {
+                  // Complete callback
+                  if (!uploadedPaths.has(key)) {
+                    uploadedPaths.set(key, [])
+                  }
+                  uploadedPaths.get(key).push(uploadedPath)
+                  fileResolve(uploadedPath)
+                },
+                (error) => {
+                  // Error callback
+                  console.error("Error uploading file:", error)
+                  fileReject(error)
+                }
+              )
+            })
+            uploadPromises.push(uploadPromise)
+          }
+        })
+      })
+      
+      // If no files to upload, resolve immediately
+      if (uploadPromises.length === 0) {
+        resolve({
+          filesByAttribute,
+          uploadedPaths,
+        })
+        return
+      }
+      
+      // Wait for all uploads to complete
+      Promise.all(uploadPromises)
+        .then(async () => {
+          // Wait for queue to finish processing all items
+          await uploadQueue.waitForAll()
+          
+          // All uploads complete, resolve with the grouped data
+          resolve({
+            filesByAttribute,
+            uploadedPaths,
+          })
+        })
+        .catch((error) => {
+          reject(error)
+        })
+      } catch (error) {
+        console.error("Error in uploadAllFiles:", error)
+        reject(error)
+      }
     })
   }
 
-  const handleSendToTechnician = () => {
-    // Placeholder - replace with API call later
-    console.log("Sending to technician:", job)
-    // Update job status to waiting for technician
-    onUpdate({
-      ...job,
-      status: "Waiting for Technician",
-    })
+  const insertInspectorChecklists = async (uploadedData) => {
+    try {
+      const { supabase } = await import("@/lib/supabase")
+      const { filesByAttribute, uploadedPaths } = uploadedData
+      
+      console.log("Inserting checklist entries. Files by attribute:", Array.from(filesByAttribute.entries()))
+      console.log("Uploaded paths:", Array.from(uploadedPaths.entries()))
+      
+      // Create maps for ID lookups
+      const locationIdMap = new Map()
+      propertyLocations.forEach((loc) => {
+        locationIdMap.set(loc.name, loc.id)
+      })
+      console.log("Location ID map:", Array.from(locationIdMap.entries()))
+      
+      const attributeIdMap = new Map()
+      locationAttributes.forEach((attr) => {
+        attributeIdMap.set(attr.name, attr.id)
+      })
+      console.log("Attribute ID map:", Array.from(attributeIdMap.entries()))
+      
+      const statusIdMap = new Map()
+      inspectorStatuses.forEach((status) => {
+        statusIdMap.set(status.name, status.id)
+      })
+      console.log("Status ID map:", Array.from(statusIdMap.entries()))
+      
+      // Prepare checklist entries
+      const checklistEntries = []
+      
+      filesByAttribute.forEach((attrData, key) => {
+        const locationId = locationIdMap.get(attrData.locationName)
+        const attributeId = attributeIdMap.get(attrData.attributeName)
+        const statusId = attrData.status ? statusIdMap.get(attrData.status) : null
+        const imagePaths = uploadedPaths.get(key) || []
+        
+        console.log(`Processing entry - Location: ${attrData.locationName} (ID: ${locationId}), Attribute: ${attrData.attributeName} (ID: ${attributeId}), Status: ${attrData.status} (ID: ${statusId}), Images: ${imagePaths.length}`)
+        
+        if (!locationId || !attributeId) {
+          console.warn(`Missing ID for location: ${attrData.locationName} (found: ${locationId}) or attribute: ${attrData.attributeName} (found: ${attributeId})`)
+          return
+        }
+        
+        checklistEntries.push({
+          job_id: job.id,
+          location_id: locationId,
+          attribute_id: attributeId,
+          status_id: statusId,
+          images: imagePaths,
+          notes: null, // Can be added later if needed
+        })
+      })
+      
+      if (checklistEntries.length === 0) {
+        console.log("No checklist entries to insert")
+        return
+      }
+      
+      console.log(`Preparing to insert ${checklistEntries.length} checklist entries:`, checklistEntries)
+      
+      // Insert all checklist entries (use upsert to handle duplicates)
+      const { data, error } = await supabase
+        .from("inspector_checklists")
+        .upsert(checklistEntries, {
+          onConflict: "job_id,location_id,attribute_id",
+        })
+        .select()
+      
+      if (error) {
+        console.error("Error inserting checklist entries:", error)
+        throw error
+      }
+      
+      console.log(`Successfully inserted ${checklistEntries.length} checklist entries:`, data)
+    } catch (error) {
+      console.error("Error in insertInspectorChecklists:", error)
+      throw error
+    }
   }
+
+  const handleSaveAsDraft = async () => {
+    try {
+      // Save draft locally to IndexedDB (don't upload files yet)
+      saveDraft()
+      
+      // Update job status to draft
+      onUpdate({
+        ...job,
+        status: "Draft",
+      })
+    } catch (error) {
+      console.error("Error saving draft:", error)
+    }
+  }
+
+  const handleSendToTechnician = async () => {
+    try {
+      setIsUploading(true)
+      console.log("Starting For Technician process...")
+      console.log("Job attributes:", job.attributes)
+      
+      if (!isOnline) {
+        // Offline: Save as draft and show message
+        saveDraft()
+        alert(
+          "You are currently offline. Your work has been saved as a draft. " +
+          "It will be sent to the technician when your connection is restored."
+        )
+        onUpdate({
+          ...job,
+          status: "Draft",
+        })
+        setIsUploading(false)
+        return
+      }
+      
+      // Upload all files and wait for completion
+      console.log("Uploading files...")
+      const uploadedData = await uploadAllFiles()
+      console.log("Upload complete. Uploaded data:", uploadedData)
+      
+      // Insert into inspector_checklists after all uploads complete
+      console.log("Inserting into inspector_checklists...")
+      await insertInspectorChecklists(uploadedData)
+      console.log("Checklist entries inserted successfully")
+      
+      // Update job status to "Waiting for Technician"
+      console.log("Updating job status...")
+      if (onUpdateJobStatus) {
+        await onUpdateJobStatus(job.id, "Waiting for Technician", {
+          inspectorId: job.inspectorId, // Preserve inspector_id
+          technicianId: job.technicianId,
+          qaId: job.qaId,
+          jobTypeId: job.jobTypeId,
+          date: job.date,
+          propertyId: job.propertyId,
+        })
+      }
+      
+      // Delete draft after successful submission
+      deleteDraft()
+      
+      // Update local state
+      onUpdate({
+        ...job,
+        status: "Waiting for Technician",
+      })
+      
+      setIsUploading(false)
+      console.log("For Technician process completed successfully")
+    } catch (error) {
+      console.error("Error sending to technician:", error)
+      console.error("Error stack:", error.stack)
+      setIsUploading(false)
+      alert(`Error sending to technician: ${error.message}. Your work has been saved as a draft.`)
+      saveDraft()
+      onUpdate({
+        ...job,
+        status: "Draft",
+      })
+    }
+  }
+
+  // Determine which buttons to show based on job status
+  const showStartJobButton = job.status === "Waiting for Inspector"
+  const showActionButtons = job.status === "On-Going Inspection"
+
+  // Determine if attributes can be added based on job status
+  const canAddAttributes = job.status === "On-Going Inspection"
 
   const jobContent = (
     <div className="space-y-4">
-      {job.property.locations.map((locationName) => (
+      {(job.property?.locations || []).map((locationName) => (
         <LocationSection
           key={locationName}
           locationName={locationName}
           attributes={job.attributes[locationName] || []}
-          availableAttributes={AVAILABLE_LOCATION_ATTRIBUTES}
+          availableAttributes={locationAttributes.map((attr) => attr.name)}
           onUpdate={(attributes) =>
             handleLocationUpdate(locationName, attributes)
           }
+          inspectorStatuses={inspectorStatuses}
+          canAddAttributes={canAddAttributes}
         />
       ))}
     </div>
@@ -584,11 +1145,23 @@ function JobCard({ job, onUpdate }) {
   return (
     <>
       {/* Mobile/Tablet: Full-width Sheet */}
-      <Sheet open={isExpanded} onOpenChange={setIsExpanded}>
+      <Sheet 
+        open={isExpanded} 
+        onOpenChange={(open) => {
+          // Prevent closing while starting job
+          if (!isStartingJob) {
+            setIsExpanded(open)
+          }
+        }}
+      >
         <Card className="overflow-hidden lg:hidden">
           <CardHeader
-            className="cursor-pointer p-4 active:bg-accent/50"
-            onClick={() => setIsExpanded(true)}
+            className={cn("p-4", !isStartingJob && "cursor-pointer active:bg-accent/50")}
+            onClick={() => {
+              if (!isStartingJob) {
+                setIsExpanded(true)
+              }
+            }}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
@@ -638,23 +1211,50 @@ function JobCard({ job, onUpdate }) {
             {jobContent}
           </div>
           <div className="sticky bottom-0 z-10 border-t bg-background p-4 flex-shrink-0">
-            <div className="flex gap-2">
+            {showStartJobButton && (
               <Button
                 type="button"
-                variant="outline"
-                className="flex-1 h-11 text-base"
-                onClick={handleSaveAsDraft}
+                className="w-full h-11 text-base"
+                onClick={handleStartJob}
+                disabled={isStartingJob}
               >
-                Save as Draft
+                {isStartingJob ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Starting Job...
+                  </>
+                ) : (
+                  "Start Job"
+                )}
               </Button>
-              <Button
-                type="button"
-                className="flex-1 h-11 text-base"
-                onClick={handleSendToTechnician}
-              >
-                For Technician
-              </Button>
-            </div>
+            )}
+            {showActionButtons && (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 h-11 text-base"
+                  onClick={handleSaveAsDraft}
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1 h-11 text-base"
+                  onClick={handleSendToTechnician}
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    "For Technician"
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -662,8 +1262,12 @@ function JobCard({ job, onUpdate }) {
       {/* Desktop: Inline expansion */}
       <Card className="hidden lg:block overflow-hidden">
         <CardHeader
-          className="cursor-pointer p-6 active:bg-accent/50"
-          onClick={() => setIsExpanded(!isExpanded)}
+          className={cn("p-6", !isStartingJob && "cursor-pointer active:bg-accent/50")}
+          onClick={() => {
+            if (!isStartingJob) {
+              setIsExpanded(!isExpanded)
+            }
+          }}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
@@ -704,23 +1308,50 @@ function JobCard({ job, onUpdate }) {
                 {jobContent}
               </CardContent>
               <div className="border-t bg-background p-6 pt-0">
-                <div className="flex gap-3">
+                {showStartJobButton && (
                   <Button
                     type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={handleSaveAsDraft}
+                    className="w-full"
+                    onClick={handleStartJob}
+                    disabled={isStartingJob}
                   >
-                    Save as Draft
+                    {isStartingJob ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting Job...
+                      </>
+                    ) : (
+                      "Start Job"
+                    )}
                   </Button>
-                  <Button
-                    type="button"
-                    className="flex-1"
-                    onClick={handleSendToTechnician}
-                  >
-                    For Technician
-                  </Button>
-                </div>
+                )}
+                {showActionButtons && (
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={handleSaveAsDraft}
+                    >
+                      Save as Draft
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1"
+                      onClick={handleSendToTechnician}
+                      disabled={isUploading}
+                    >
+                      {isUploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        "For Technician"
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
@@ -731,23 +1362,232 @@ function JobCard({ job, onUpdate }) {
 }
 
 export function InspectorPage() {
-  const [jobs, setJobs] = useState(mockJobs)
+  const { user } = useAuth()
+  const { jobs, loading, updateJob, refetch } = useJobs()
+  const { properties } = useProperties()
+  const { propertyLocations } = usePropertyLocations()
+  const { locationAttributes } = useLocationAttributes()
+  const { inspectorStatuses } = useInspectorStatuses()
+  const { isOnline = true, wasOffline = false } = useOnlineStatus() || {}
+  
   const [activeTab, setActiveTab] = useState("available")
+  const [jobAttributes, setJobAttributes] = useState({}) // Store attributes by job ID
+  const [savedChecklists, setSavedChecklists] = useState({}) // Store saved checklists from DB by job ID
+
+  // Get current inspector's ID
+  const currentInspectorId = user?.id
+
+  // Fetch inspector checklists from database
+  useEffect(() => {
+    if (!currentInspectorId || jobs.length === 0) return
+
+    const fetchInspectorChecklists = async () => {
+      try {
+        // Get all job IDs for the current inspector
+        const jobIds = jobs
+          .filter((job) => job.inspectorId === currentInspectorId)
+          .map((job) => job.id)
+
+        if (jobIds.length === 0) return
+
+        // Fetch inspector checklists for these jobs
+        const { data: checklists, error } = await supabase
+          .from("inspector_checklists")
+          .select(`
+            *,
+            location:property_locations(id, name),
+            attribute:location_attributes(id, name),
+            status:inspector_statuses(id, name)
+          `)
+          .in("job_id", jobIds)
+
+        if (error) {
+          console.error("Error fetching inspector checklists:", error)
+          return
+        }
+
+        // Transform checklists into the same structure as jobAttributes
+        // Group by job_id, then by location, then by attribute
+        const checklistsByJob = {}
+
+        checklists?.forEach((checklist) => {
+          const jobId = checklist.job_id
+          const locationName = checklist.location?.name
+          const attributeName = checklist.attribute?.name
+          const statusName = checklist.status?.name || ""
+          const images = checklist.images || []
+
+          if (!checklistsByJob[jobId]) {
+            checklistsByJob[jobId] = {}
+          }
+
+          if (!checklistsByJob[jobId][locationName]) {
+            checklistsByJob[jobId][locationName] = []
+          }
+
+          // Check if attribute already exists in this location
+          const existingAttributeIndex = checklistsByJob[jobId][locationName].findIndex(
+            (attr) => attr.name === attributeName
+          )
+
+          if (existingAttributeIndex >= 0) {
+            // Update existing attribute
+            checklistsByJob[jobId][locationName][existingAttributeIndex] = {
+              id: checklist.attribute_id,
+              name: attributeName,
+              status: statusName,
+              files: images.map((imgPath) => imgPath), // Images are already paths (strings)
+            }
+          } else {
+            // Add new attribute
+            checklistsByJob[jobId][locationName].push({
+              id: checklist.attribute_id,
+              name: attributeName,
+              status: statusName,
+              files: images.map((imgPath) => imgPath), // Images are already paths (strings)
+            })
+          }
+        })
+
+        setSavedChecklists(checklistsByJob)
+      } catch (error) {
+        console.error("Error in fetchInspectorChecklists:", error)
+      }
+    }
+
+    fetchInspectorChecklists()
+  }, [currentInspectorId, jobs])
+
+  // Transform jobs to include property locations and structure for JobCard
+  const transformedJobs = useMemo(() => {
+    if (!currentInspectorId) return []
+    
+    return jobs
+      .filter((job) => job.inspectorId === currentInspectorId)
+      .map((job) => {
+        // Find the property to get its locations
+        const property = properties.find((p) => p.id === job.propertyId)
+        const propertyLocationNames = property?.locations?.map((loc) => loc.name) || []
+        
+        // Merge saved checklists with draft attributes
+        // Draft attributes (from jobAttributes) take precedence for active jobs
+        // Saved checklists (from savedChecklists) are used for previous jobs
+        const savedAttributes = savedChecklists[job.id] || {}
+        const draftAttributes = jobAttributes[job.id] || {}
+        
+        // For active jobs (On-Going Inspection), prefer draft attributes
+        // For previous jobs, use saved checklists
+        let finalAttributes = {}
+        if (job.status === "On-Going Inspection") {
+          // Active job: merge saved with draft (draft takes precedence)
+          finalAttributes = { ...savedAttributes }
+          // Merge attributes within each location
+          Object.keys(draftAttributes).forEach((locationName) => {
+            if (!finalAttributes[locationName]) {
+              finalAttributes[locationName] = []
+            }
+            const savedAttrs = savedAttributes[locationName] || []
+            const draftAttrs = draftAttributes[locationName] || []
+            // Combine and deduplicate by attribute name (draft takes precedence)
+            const mergedAttrs = [...savedAttrs]
+            draftAttrs.forEach((draftAttr) => {
+              const existingIndex = mergedAttrs.findIndex(
+                (attr) => attr.name === draftAttr.name
+              )
+              if (existingIndex >= 0) {
+                mergedAttrs[existingIndex] = draftAttr
+              } else {
+                mergedAttrs.push(draftAttr)
+              }
+            })
+            finalAttributes[locationName] = mergedAttrs
+          })
+        } else {
+          // Previous job: use saved checklists
+          finalAttributes = savedAttributes
+        }
+        
+        // Transform job to match JobCard expected structure
+        return {
+          ...job,
+          property: {
+            id: job.propertyId,
+            name: job.property?.name || "Unknown Property",
+            address: job.property?.fullAddress || job.property?.address || "",
+            locations: propertyLocationNames,
+          },
+          attributes: finalAttributes,
+        }
+      })
+  }, [jobs, properties, currentInspectorId, jobAttributes, savedChecklists])
+
+  // Filter jobs by status for each tab
+  const availableJobs = useMemo(() => {
+    return transformedJobs.filter((job) => job.status === "Waiting for Inspector")
+  }, [transformedJobs])
+
+  const activeJobs = useMemo(() => {
+    // Active Jobs: Show jobs with status "On-Going Inspection" (jobs currently being worked on)
+    return transformedJobs.filter((job) => job.status === "On-Going Inspection")
+  }, [transformedJobs])
+
+  const previousJobs = useMemo(() => {
+    return transformedJobs.filter((job) => 
+      job.status === "Done" || 
+      job.status === "For QA" || 
+      job.status === "Waiting for Technician" ||
+      job.status === "On-Going Technician"
+    )
+  }, [transformedJobs])
 
   const handleJobUpdate = (updatedJob) => {
-    setJobs(jobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)))
+    // Update the job attributes in local state
+    setJobAttributes((prev) => ({
+      ...prev,
+      [updatedJob.id]: updatedJob.attributes || {},
+    }))
   }
 
-  const availableJobs = jobs.filter((job) => job.status === "Waiting for Inspector")
-  const activeJobs = jobs.filter((job) => job.status === "On-Going Inspection")
-  const previousJobs = jobs.filter((job) => 
-    job.status === "Done" || 
-    job.status === "For QA" || 
-    job.status === "Waiting for Technician" ||
-    job.status === "Draft"
-  )
+  const handleStartJob = async (jobId) => {
+    try {
+      // Find the job to get its current data
+      const job = transformedJobs.find((j) => j.id === jobId)
+      if (!job) return
+
+      // Update job status to "On-Going Inspection"
+      const result = await updateJob(jobId, {
+        jobTypeId: job.jobTypeId,
+        date: job.date,
+        propertyId: job.propertyId,
+        inspectorId: job.inspectorId,
+        technicianId: job.technicianId || null,
+        qaId: job.qaId || null,
+        status: "On-Going Inspection",
+        inspectedDate: job.inspectedDate || null,
+        fixDate: job.fixDate || null,
+      })
+
+      if (result.success) {
+        // Refetch jobs to update the UI
+        await refetch()
+      }
+    } catch (error) {
+      console.error("Error starting job:", error)
+    }
+  }
 
   const renderJobs = (jobsList) => {
+    if (loading) {
+      return (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mx-auto" />
+            <p className="mt-4 text-muted-foreground">Loading jobs...</p>
+          </CardContent>
+        </Card>
+      )
+    }
+
     if (jobsList.length === 0) {
       return (
         <Card>
@@ -767,7 +1607,23 @@ export function InspectorPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
           >
-            <JobCard job={job} onUpdate={handleJobUpdate} />
+            <JobCard 
+              job={job} 
+              onUpdate={handleJobUpdate}
+              onStartJob={handleStartJob}
+              locationAttributes={locationAttributes}
+              inspectorStatuses={inspectorStatuses}
+              propertyLocations={propertyLocations}
+              onUpdateJobStatus={async (jobId, status, additionalData = {}) => {
+                const result = await updateJob(jobId, { 
+                  status,
+                  ...additionalData, // Include inspectorId and other fields to preserve them
+                })
+                if (result.success) {
+                  await refetch()
+                }
+              }}
+            />
           </motion.div>
         ))}
       </div>
@@ -776,6 +1632,7 @@ export function InspectorPage() {
 
   return (
     <div className="container mx-auto space-y-4 md:space-y-6 p-4 md:p-6 max-w-7xl">
+      
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -788,24 +1645,79 @@ export function InspectorPage() {
       </motion.div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="available">
-            Available Jobs ({availableJobs.length})
-          </TabsTrigger>
-          <TabsTrigger value="active">
-            Active Jobs ({activeJobs.length})
-          </TabsTrigger>
-          <TabsTrigger value="previous">
-            Previous Jobs ({previousJobs.length})
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="available" className="mt-6">
+        {/* Mobile/Tablet: Scrollable horizontal tabs */}
+        <div className="block md:hidden overflow-x-auto -mx-4 px-4 scrollbar-hide">
+          <TabsList className="inline-flex w-auto h-auto p-1.5 bg-muted/50 rounded-lg gap-1.5">
+            <TabsTrigger 
+              value="available"
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all whitespace-nowrap"
+            >
+              <span>Available</span>
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {availableJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="active"
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all whitespace-nowrap"
+            >
+              <span>Active</span>
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {activeJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="previous"
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all whitespace-nowrap"
+            >
+              <span>Previous</span>
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {previousJobs.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        
+        {/* Desktop: Grid layout tabs */}
+        <div className="hidden md:block">
+          <TabsList className="grid w-full grid-cols-3 h-10 p-1 bg-muted/50 rounded-md">
+            <TabsTrigger 
+              value="available"
+              className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
+            >
+              Available Jobs
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {availableJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="active"
+              className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
+            >
+              Active Jobs
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {activeJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="previous"
+              className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
+            >
+              Previous Jobs
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {previousJobs.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        
+        <TabsContent value="available" className="mt-4 md:mt-6">
           {renderJobs(availableJobs)}
         </TabsContent>
-        <TabsContent value="active" className="mt-6">
+        <TabsContent value="active" className="mt-4 md:mt-6">
           {renderJobs(activeJobs)}
         </TabsContent>
-        <TabsContent value="previous" className="mt-6">
+        <TabsContent value="previous" className="mt-4 md:mt-6">
           {renderJobs(previousJobs)}
         </TabsContent>
       </Tabs>

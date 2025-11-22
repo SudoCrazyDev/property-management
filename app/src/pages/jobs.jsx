@@ -2,7 +2,7 @@ import { useState, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Search, Plus, Edit, Trash2, ChevronLeft, ChevronRight, ClipboardCheck, FileCheck } from "lucide-react"
+import { Search, Plus, Edit, Trash2, ChevronLeft, ChevronRight, ClipboardCheck, FileCheck, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -44,44 +44,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { motion } from "motion/react"
-
-const jobSchema = z.object({
-  jobType: z.string().min(1, "Job type is required"),
-  date: z.string().min(1, "Date is required"),
-  property: z.string().min(1, "Property is required"),
-  inspector: z.string().min(1, "Inspector is required"),
-  inspectedDate: z.string().optional(),
-  technician: z.string().min(1, "Technician is required"),
-  fixDate: z.string().optional(),
-})
-
-// Mock data - replace with API calls later
-const mockJobTypes = ["Move In", "Move Out"]
-const mockProperties = [
-  { id: 1, name: "House 1", address: "123 Main St" },
-  { id: 2, name: "Apartment 2", address: "456 Oak Ave" },
-  { id: 3, name: "Condo 3", address: "789 Pine Rd" },
-  { id: 4, name: "Duplex 4", address: "321 Elm St" },
-  { id: 5, name: "House 5", address: "654 Maple Dr" },
-]
-
-const mockInspectors = [
-  { id: 1, name: "John Inspector", email: "john@example.com" },
-  { id: 2, name: "Jane Inspector", email: "jane@example.com" },
-  { id: 3, name: "Bob Inspector", email: "bob@example.com" },
-]
-
-const mockTechnicians = [
-  { id: 1, name: "Mike Technician", email: "mike@example.com" },
-  { id: 2, name: "Sarah Technician", email: "sarah@example.com" },
-  { id: 3, name: "Tom Technician", email: "tom@example.com" },
-]
-
-const mockQAs = [
-  { id: 1, name: "Alice QA", email: "alice@example.com" },
-  { id: 2, name: "David QA", email: "david@example.com" },
-  { id: 3, name: "Emma QA", email: "emma@example.com" },
-]
+import { useJobs } from "@/hooks/use-jobs"
+import { useJobTypes } from "@/hooks/use-job-types"
+import { useProperties } from "@/hooks/use-properties"
+import { useUsers } from "@/hooks/use-users"
+import { useToast } from "@/hooks/use-toast"
 
 const JOB_STATUSES = [
   "In-Review",
@@ -93,36 +60,63 @@ const JOB_STATUSES = [
   "Done",
 ]
 
-const mockJobs = Array.from({ length: 25 }, (_, i) => ({
-  id: i + 1,
-  jobType: mockJobTypes[i % mockJobTypes.length],
-  date: new Date(2024, i % 12, (i % 28) + 1).toISOString().split("T")[0],
-  property: mockProperties[i % mockProperties.length],
-  inspector: mockInspectors[i % mockInspectors.length],
-  inspectedDate: i % 3 === 0 ? new Date(2024, i % 12, (i % 28) + 2).toISOString().split("T")[0] : null,
-  status: JOB_STATUSES[i % JOB_STATUSES.length],
-  technician: mockTechnicians[i % mockTechnicians.length],
-  qa: mockQAs[i % mockQAs.length],
-}))
+const jobSchema = z.object({
+  jobTypeId: z.string().min(1, "Job type is required"),
+  date: z.string().min(1, "Date is required"),
+  propertyId: z.string().min(1, "Property is required"),
+  inspectorId: z.string().optional(),
+  inspectedDate: z.string().optional(),
+  technicianId: z.string().optional(),
+  fixDate: z.string().optional(),
+})
 
 export function JobsPage() {
-  const [jobs] = useState(mockJobs)
+  const { jobs, loading, error, createJob, updateJob, deleteJob } = useJobs()
+  const { jobTypes } = useJobTypes()
+  const { properties } = useProperties()
+  const { users } = useUsers()
+  const { toast } = useToast()
+  
   const [searchQuery, setSearchQuery] = useState("")
   const [jobTypeFilter, setJobTypeFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
+  const [jobToDelete, setJobToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const itemsPerPage = 10
+
+  // Filter users by role
+  const inspectors = useMemo(() => {
+    return users.filter((user) => user.role === "Inspector")
+  }, [users])
+
+  const technicians = useMemo(() => {
+    return users.filter((user) => user.role === "Technician")
+  }, [users])
+
+  const qas = useMemo(() => {
+    return users.filter((user) => user.role === "QA")
+  }, [users])
+
+  // Get unique job types for filter
+  const availableJobTypes = useMemo(() => {
+    return Array.from(new Set(jobs.map((job) => job.jobType))).filter(Boolean)
+  }, [jobs])
 
   const form = useForm({
     resolver: zodResolver(jobSchema),
     defaultValues: {
-      jobType: "",
+      jobTypeId: "",
       date: "",
-      property: "",
-      inspector: "",
+      propertyId: "",
+      inspectorId: "",
       inspectedDate: "",
+      technicianId: "",
+      fixDate: "",
     },
   })
 
@@ -131,8 +125,9 @@ export function JobsPage() {
       const matchesSearch =
         searchQuery === "" ||
         job.jobType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.property.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.inspector.name.toLowerCase().includes(searchQuery.toLowerCase())
+        job.property?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.inspector?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        job.technician?.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesJobType = jobTypeFilter === "all" || job.jobType === jobTypeFilter
       const matchesStatus = statusFilter === "all" || job.status === statusFilter
       return matchesSearch && matchesJobType && matchesStatus
@@ -150,16 +145,24 @@ export function JobsPage() {
     setEditingJob(job)
     if (job) {
       form.reset({
-        jobType: job.jobType,
+        jobTypeId: job.jobTypeId,
         date: job.date,
-        property: job.property.id.toString(),
-        inspector: job.inspector.id.toString(),
+        propertyId: job.propertyId,
+        inspectorId: job.inspectorId || "",
         inspectedDate: job.inspectedDate || "",
-        technician: job.technician?.id.toString() || "",
+        technicianId: job.technicianId || "",
         fixDate: job.fixDate || "",
       })
     } else {
-      form.reset()
+      form.reset({
+        jobTypeId: "",
+        date: "",
+        propertyId: "",
+        inspectorId: "",
+        inspectedDate: "",
+        technicianId: "",
+        fixDate: "",
+      })
     }
     setIsDialogOpen(true)
   }
@@ -170,15 +173,104 @@ export function JobsPage() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    console.log(editingJob ? "Update job:" : "Create job:", data)
-    handleCloseDialog()
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      // Convert empty strings and "none" to null
+      const inspectorId = data.inspectorId && data.inspectorId !== "" && data.inspectorId !== "none" ? data.inspectorId : null
+      const technicianId = data.technicianId && data.technicianId !== "" && data.technicianId !== "none" ? data.technicianId : null
+      
+      const jobData = {
+        jobTypeId: data.jobTypeId,
+        date: data.date,
+        propertyId: data.propertyId,
+        inspectorId: inspectorId,
+        technicianId: technicianId,
+        inspectedDate: data.inspectedDate || null,
+        fixDate: data.fixDate || null,
+        status: editingJob?.status || "In-Review",
+      }
+      
+      console.log("Submitting job data:", jobData) // Debug log
+
+      if (editingJob) {
+        const result = await updateJob(editingJob.id, jobData)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: "Job has been updated successfully.",
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update job. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createJob(jobData)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: "Job has been created successfully.",
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create job. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err.message || "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleDelete = (jobId) => {
-    // Placeholder - no API yet
-    console.log("Delete job:", jobId)
+  const handleDeleteClick = (job) => {
+    setJobToDelete(job)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!jobToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteJob(jobToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Job has been deleted successfully.",
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setJobToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete job. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setJobToDelete(null)
   }
 
   const handleTechnicianChecklist = (job) => {
@@ -251,29 +343,29 @@ export function JobsPage() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <FormItem>
-                    <FormLabel htmlFor="jobType">Job Type</FormLabel>
+                    <FormLabel htmlFor="jobTypeId">Job Type</FormLabel>
                     <FormControl>
                       <Select
-                        value={form.watch("jobType")}
+                        value={form.watch("jobTypeId")}
                         onValueChange={(value) => {
-                          form.setValue("jobType", value)
-                          form.trigger("jobType")
+                          form.setValue("jobTypeId", value)
+                          form.trigger("jobTypeId")
                         }}
                       >
-                        <SelectTrigger id="jobType">
+                        <SelectTrigger id="jobTypeId">
                           <SelectValue placeholder="Select job type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockJobTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
+                          {jobTypes.map((type) => (
+                            <SelectItem key={type.id} value={type.id}>
+                              {type.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </FormControl>
                     <FormMessage>
-                      {form.formState.errors.jobType?.message}
+                      {form.formState.errors.jobTypeId?.message}
                     </FormMessage>
                   </FormItem>
                   <FormItem>
@@ -291,55 +383,57 @@ export function JobsPage() {
                   </FormItem>
                 </div>
                 <FormItem>
-                  <FormLabel htmlFor="property">Property</FormLabel>
+                  <FormLabel htmlFor="propertyId">Property</FormLabel>
                   <FormControl>
                     <Select
-                      value={form.watch("property")}
+                      value={form.watch("propertyId")}
                       onValueChange={(value) => {
-                        form.setValue("property", value)
-                        form.trigger("property")
+                        form.setValue("propertyId", value)
+                        form.trigger("propertyId")
                       }}
                     >
-                      <SelectTrigger id="property">
+                      <SelectTrigger id="propertyId">
                         <SelectValue placeholder="Select property" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mockProperties.map((property) => (
-                          <SelectItem key={property.id} value={property.id.toString()}>
-                            {property.name} - {property.address}
+                        {properties.map((property) => (
+                          <SelectItem key={property.id} value={property.id}>
+                            {property.name} - {property.streetAddress}
+                            {property.unitNumber && `, ${property.unitNumber}`}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </FormControl>
                   <FormMessage>
-                    {form.formState.errors.property?.message}
+                    {form.formState.errors.propertyId?.message}
                   </FormMessage>
                 </FormItem>
                 <FormItem>
-                  <FormLabel htmlFor="inspector">Inspector</FormLabel>
+                  <FormLabel htmlFor="inspectorId">Inspector (Optional)</FormLabel>
                   <FormControl>
                     <Select
-                      value={form.watch("inspector")}
+                      value={form.watch("inspectorId") || undefined}
                       onValueChange={(value) => {
-                        form.setValue("inspector", value)
-                        form.trigger("inspector")
+                        form.setValue("inspectorId", value === "none" ? "" : value)
+                        form.trigger("inspectorId")
                       }}
                     >
-                      <SelectTrigger id="inspector">
-                        <SelectValue placeholder="Select inspector" />
+                      <SelectTrigger id="inspectorId">
+                        <SelectValue placeholder="Select inspector (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mockInspectors.map((inspector) => (
-                          <SelectItem key={inspector.id} value={inspector.id.toString()}>
-                            {inspector.name} ({inspector.email})
+                        <SelectItem value="none">None</SelectItem>
+                        {inspectors.map((inspector) => (
+                          <SelectItem key={inspector.id} value={inspector.id}>
+                            {inspector.firstName} {inspector.lastName} ({inspector.email})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </FormControl>
                   <FormMessage>
-                    {form.formState.errors.inspector?.message}
+                    {form.formState.errors.inspectorId?.message}
                   </FormMessage>
                 </FormItem>
                 <FormItem>
@@ -356,29 +450,30 @@ export function JobsPage() {
                   </FormMessage>
                 </FormItem>
                 <FormItem>
-                  <FormLabel htmlFor="technician">Technician</FormLabel>
+                  <FormLabel htmlFor="technicianId">Technician (Optional)</FormLabel>
                   <FormControl>
                     <Select
-                      value={form.watch("technician")}
+                      value={form.watch("technicianId") || undefined}
                       onValueChange={(value) => {
-                        form.setValue("technician", value)
-                        form.trigger("technician")
+                        form.setValue("technicianId", value === "none" ? "" : value)
+                        form.trigger("technicianId")
                       }}
                     >
-                      <SelectTrigger id="technician">
-                        <SelectValue placeholder="Select technician" />
+                      <SelectTrigger id="technicianId">
+                        <SelectValue placeholder="Select technician (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {mockTechnicians.map((technician) => (
-                          <SelectItem key={technician.id} value={technician.id.toString()}>
-                            {technician.name} ({technician.email})
+                        <SelectItem value="none">None</SelectItem>
+                        {technicians.map((technician) => (
+                          <SelectItem key={technician.id} value={technician.id}>
+                            {technician.firstName} {technician.lastName} ({technician.email})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </FormControl>
                   <FormMessage>
-                    {form.formState.errors.technician?.message}
+                    {form.formState.errors.technicianId?.message}
                   </FormMessage>
                 </FormItem>
                 <FormItem>
@@ -399,15 +494,19 @@ export function JobsPage() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingJob
-                      ? "Update Job"
-                      : "Create Job"}
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingJob ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingJob ? "Update Job" : "Create Job"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -438,7 +537,7 @@ export function JobsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  {mockJobTypes.map((type) => (
+                  {availableJobTypes.map((type) => (
                     <SelectItem key={type} value={type}>
                       {type}
                     </SelectItem>
@@ -451,130 +550,162 @@ export function JobsPage() {
             </div>
           </div>
 
+          {error && (
+            <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           <div className="mt-4 rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Job Type</TableHead>
-                  <TableHead>Property</TableHead>
-                  <TableHead>Inspector</TableHead>
-                  <TableHead>Technician</TableHead>
-                  <TableHead>QA</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedJobs.length === 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
-                      No jobs found.
-                    </TableCell>
+                    <TableHead>Job Type</TableHead>
+                    <TableHead>Property</TableHead>
+                    <TableHead>Inspector</TableHead>
+                    <TableHead>Technician</TableHead>
+                    <TableHead>QA</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  paginatedJobs.map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell>
-                        <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                          {job.jobType}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {job.property.name}
-                        <div className="text-xs text-muted-foreground">
-                          {job.property.address}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {job.inspector.name}
-                        <div className="text-xs text-muted-foreground">
-                          {job.inspector.email}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {job.technician.name}
-                        <div className="text-xs text-muted-foreground">
-                          {job.technician.email}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {job.qa.name}
-                        <div className="text-xs text-muted-foreground">
-                          {job.qa.email}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(job.status)}`}>
-                          {job.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <TooltipProvider>
-                          <div className="flex justify-end gap-2">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleTechnicianChecklist(job)}
-                                >
-                                  <ClipboardCheck className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Technician Checklist</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleInspectorChecklist(job)}
-                                >
-                                  <FileCheck className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Inspector Checklist</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleOpenDialog(job)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit Job</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleDelete(job.id)}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Delete Job</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TooltipProvider>
+                </TableHeader>
+                <TableBody>
+                  {paginatedJobs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-24 text-center">
+                        No jobs found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    paginatedJobs.map((job) => (
+                      <TableRow key={job.id}>
+                        <TableCell>
+                          <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                            {job.jobType}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {job.property?.name || "N/A"}
+                          {job.property?.fullAddress && (
+                            <div className="text-xs text-muted-foreground">
+                              {job.property.fullAddress}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {job.inspector ? (
+                            <>
+                              {job.inspector.name}
+                              <div className="text-xs text-muted-foreground">
+                                {job.inspector.email}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Not assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {job.technician ? (
+                            <>
+                              {job.technician.name}
+                              <div className="text-xs text-muted-foreground">
+                                {job.technician.email}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Not assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {job.qa ? (
+                            <>
+                              {job.qa.name}
+                              <div className="text-xs text-muted-foreground">
+                                {job.qa.email}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Not assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(job.status)}`}>
+                            {job.status}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <TooltipProvider>
+                            <div className="flex justify-end gap-2">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleTechnicianChecklist(job)}
+                                  >
+                                    <ClipboardCheck className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Technician Checklist</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleInspectorChecklist(job)}
+                                  >
+                                    <FileCheck className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Inspector Checklist</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenDialog(job)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Edit Job</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleDeleteClick(job)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Delete Job</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TooltipProvider>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
 
           {totalPages > 1 && (
@@ -608,6 +739,43 @@ export function JobsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Job</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this job? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   )
 }

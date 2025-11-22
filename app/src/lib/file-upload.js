@@ -73,6 +73,45 @@ export async function deletePropertyImages(paths) {
 }
 
 /**
+ * Upload files for inspector/technician checklists
+ * Files are stored in: inspector-checklists/{year}/{month}/{filename}
+ * Returns array of paths (relative paths, not full URLs)
+ */
+export async function uploadFiles(files, folderPrefix = "") {
+  if (!files || files.length === 0) return []
+
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, "0")
+  const folderPath = folderPrefix ? `${folderPrefix}/${year}/${month}` : `${year}/${month}`
+
+  const uploadPromises = files.map(async (file) => {
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split(".").pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `${folderPath}/${fileName}`
+
+      // Upload to Supabase Storage using StorageClient
+      const { data, error } = await storageClient.from("app_bucket").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+      if (error) throw error
+
+      // Return relative path (not full URL)
+      return filePath
+    } catch (error) {
+      console.error("Error uploading file:", error)
+      throw error
+    }
+  })
+
+  return Promise.all(uploadPromises)
+}
+
+/**
  * Get public URL for an image path
  * Uses environment variable for base URL
  */

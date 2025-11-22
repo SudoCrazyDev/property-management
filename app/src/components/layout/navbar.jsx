@@ -13,7 +13,7 @@ import { SideMenu } from "./side-menu"
 import { motion } from "motion/react"
 import { useAuth } from "@/hooks/use-auth"
 
-export function Navbar({ onMenuClick }) {
+export function Navbar({ onMenuClick, hasNotification }) {
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const { user, logout } = useAuth()
@@ -28,7 +28,7 @@ export function Navbar({ onMenuClick }) {
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
-      className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className={`sticky z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${hasNotification ? 'top-[60px]' : 'top-0'}`}
     >
       <div className="container flex h-16 items-center justify-between px-4">
         <div className="flex items-center gap-4">

@@ -343,3 +343,13 @@ html {
 [data-radix-dialog-overlay][data-state="closed"] {
   animation: fade-out-0 0.15s ease-in;
 }
+
+/* Hide scrollbar for horizontal scrolling tabs */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
