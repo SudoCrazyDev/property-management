@@ -2,6 +2,7 @@ import { LayoutDashboard, Building2, UserCog, Settings, LogOut, Briefcase, Clipb
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
+import { useAuth } from "@/hooks/use-auth"
 
 const menuItems = [
   {
@@ -44,9 +45,10 @@ const menuItems = [
 export function SideMenu({ onLinkClick }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
 
   const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated")
+    logout()
     navigate("/login")
   }
 

@@ -7,14 +7,9 @@ import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
 import { InspectorPage } from "@/pages/inspector"
 import { TechnicianPage } from "@/pages/technician"
+import { AdminSetupPage } from "@/pages/admin-setup"
 import { PrivateLayout } from "@/components/layout/private-layout"
-
-// Placeholder auth check - replace with actual auth logic later
-const isAuthenticated = () => {
-  // For now, check localStorage or a simple flag
-  // In production, this would check tokens, cookies, etc.
-  return localStorage.getItem("isAuthenticated") === "true"
-}
+import { isAuthenticated } from "@/lib/auth"
 
 // Public route wrapper
 const PublicRoute = ({ children }) => {
@@ -40,6 +35,10 @@ export const router = createBrowserRouter([
         <LoginPage />
       </PublicRoute>
     ),
+  },
+  {
+    path: "/admin-setup",
+    element: <AdminSetupPage />,
   },
   {
     path: "/",

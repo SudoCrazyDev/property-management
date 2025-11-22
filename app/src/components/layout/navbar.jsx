@@ -11,13 +11,15 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { SideMenu } from "./side-menu"
 import { motion } from "motion/react"
+import { useAuth } from "@/hooks/use-auth"
 
 export function Navbar({ onMenuClick }) {
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { user, logout } = useAuth()
 
   const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated")
+    logout()
     navigate("/login")
   }
 
@@ -82,6 +84,12 @@ export function Navbar({ onMenuClick }) {
               </motion.div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {user && (
+                <div className="px-2 py-1.5 text-sm text-muted-foreground border-b">
+                  <div className="font-medium">{user.first_name} {user.last_name}</div>
+                  <div className="text-xs">{user.email}</div>
+                </div>
+              )}
               <DropdownMenuItem>Profile</DropdownMenuItem>
               <DropdownMenuItem>Settings</DropdownMenuItem>
               <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>

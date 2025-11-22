@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -13,6 +14,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { motion } from "motion/react"
+import { signIn } from "@/lib/auth"
 
 const loginSchema = z.object({
   email: z
@@ -27,6 +29,7 @@ const loginSchema = z.object({
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const [error, setError] = useState(null)
   const form = useForm({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -35,12 +38,18 @@ export function LoginPage() {
     },
   })
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    // Set authentication flag for demo purposes
-    console.log("Login data:", data)
-    localStorage.setItem("isAuthenticated", "true")
-    navigate("/dashboard")
+  const onSubmit = async (data) => {
+    try {
+      setError(null)
+      const result = await signIn(data.email, data.password)
+      
+      if (result.success) {
+        navigate("/dashboard")
+      }
+    } catch (err) {
+      setError(err.message || "Invalid email or password")
+      console.error("Login error:", err)
+    }
   }
 
   return (
@@ -112,6 +121,15 @@ export function LoginPage() {
                     </FormMessage>
                   </FormItem>
                 </motion.div>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+                  >
+                    {error}
+                  </motion.div>
+                )}
               </CardContent>
               <CardFooter className="flex flex-col space-y-4">
                 <motion.div
