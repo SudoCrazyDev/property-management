@@ -1,11 +1,51 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X, Upload, Image as ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
+import { getImageUrl } from "@/lib/file-upload"
 
 export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
-  const [previews, setPreviews] = useState(value)
+  // value can be array of:
+  // - File objects with preview URLs (for new uploads)
+  // - Path strings (for existing images from database)
+  const [previews, setPreviews] = useState([])
+
+  // Initialize previews from value prop
+  useEffect(() => {
+    if (value && value.length > 0) {
+      const initializedPreviews = value.map((item) => {
+        // If it's already a preview object (has id, url, file)
+        if (item.id && item.url) {
+          return item
+        }
+        // If it's a file object
+        if (item instanceof File) {
+          return {
+            id: Date.now() + Math.random(),
+            url: URL.createObjectURL(item),
+            file: item,
+            name: item.name,
+            isNew: true,
+          }
+        }
+        // If it's a path string (from database)
+        if (typeof item === "string") {
+          return {
+            id: item,
+            url: getImageUrl(item),
+            path: item,
+            name: item.split("/").pop(),
+            isExisting: true,
+          }
+        }
+        return null
+      }).filter(Boolean)
+      setPreviews(initializedPreviews)
+    } else {
+      setPreviews([])
+    }
+  }, [value])
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files)
@@ -31,10 +71,18 @@ export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
           url: reader.result,
           file: file,
           name: file.name,
+          isNew: true,
         }
         const updatedPreviews = [...previews, newPreview]
         setPreviews(updatedPreviews)
-        onChange(updatedPreviews)
+        // Return both file objects and existing paths
+        const returnValue = updatedPreviews.map((preview) => {
+          if (preview.file) {
+            return preview // Return preview object with file for new uploads
+          }
+          return preview.path || preview.id // Return path for existing images
+        })
+        onChange(returnValue)
       }
       reader.readAsDataURL(file)
     })
@@ -46,7 +94,14 @@ export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
   const handleRemove = (id) => {
     const updatedPreviews = previews.filter((preview) => preview.id !== id)
     setPreviews(updatedPreviews)
-    onChange(updatedPreviews)
+    // Return both file objects (for new uploads) and paths (for existing images)
+    const returnValue = updatedPreviews.map((preview) => {
+      if (preview.file) {
+        return preview // Return file object for new uploads
+      }
+      return preview.path || preview.id // Return path for existing images
+    })
+    onChange(returnValue)
   }
 
   const handleDragOver = (e) => {
@@ -77,10 +132,18 @@ export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
           url: reader.result,
           file: file,
           name: file.name,
+          isNew: true,
         }
         const updatedPreviews = [...previews, newPreview]
         setPreviews(updatedPreviews)
-        onChange(updatedPreviews)
+        // Return both file objects and existing paths
+        const returnValue = updatedPreviews.map((preview) => {
+          if (preview.file) {
+            return preview // Return preview object with file for new uploads
+          }
+          return preview.path || preview.id // Return path for existing images
+        })
+        onChange(returnValue)
       }
       reader.readAsDataURL(file)
     })

@@ -2,7 +2,7 @@ import { useState, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Search, Plus, Edit, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Plus, Edit, Trash2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -41,26 +41,16 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { motion } from "motion/react"
 import { STATES, getCountiesForState, getCitiesForCounty } from "@/lib/locations"
 import { ImageGallery } from "@/components/ui/image-gallery"
+import { useProperties } from "@/hooks/use-properties"
+import { usePropertyTypes } from "@/hooks/use-property-types"
+import { usePropertyLocations } from "@/hooks/use-property-locations"
+import { useToast } from "@/hooks/use-toast"
 
-const PROPERTY_TYPES = ["House", "Apartment", "Condo", "Duplex", "Multi-Family", "Commercial"]
 const STATUSES = ["Active", "Inactive", "Maintenance"]
-// Available property locations - in production, this would come from Settings/API
-const AVAILABLE_LOCATIONS = [
-  "Entryway/Hallways",
-  "Living Room",
-  "Dining Area",
-  "Kitchen",
-  "Bedroom",
-  "Bathroom",
-  "Basement",
-  "Garage",
-  "Attic",
-  "Laundry Room",
-]
 
 const propertySchema = z.object({
   name: z.string().min(1, "Name is required"),
-  type: z.enum(["House", "Apartment", "Condo", "Duplex", "Multi-Family", "Commercial"]),
+  typeId: z.string().min(1, "Type is required"),
   streetAddress: z.string().min(1, "Street address is required"),
   unitNumber: z.string().optional(),
   city: z.string().min(1, "City is required"),
@@ -68,48 +58,33 @@ const propertySchema = z.object({
   zipCode: z.string().min(1, "Zip code is required"),
   county: z.string().min(1, "County is required"),
   status: z.enum(["Active", "Inactive", "Maintenance"]),
-  locations: z.array(z.string()).optional().default([]),
+  locationIds: z.array(z.string()).optional().default([]),
   gallery: z.array(z.any()).optional().default([]),
 })
 
-// Mock data - replace with API call later
-const mockProperties = Array.from({ length: 35 }, (_, i) => {
-  const types = PROPERTY_TYPES
-  const statuses = STATUSES
-  const cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia", "San Antonio", "San Diego"]
-  const states = ["NY", "CA", "IL", "TX", "AZ", "PA", "TX", "CA"]
-  
-  return {
-    id: i + 1,
-    name: `${types[i % types.length]} ${i + 1}`,
-    type: types[i % types.length],
-    streetAddress: `${100 + i * 10} Main Street`,
-    unitNumber: i % 3 === 0 ? `Unit ${String.fromCharCode(65 + (i % 26))}` : null,
-    city: cities[i % cities.length],
-    state: states[i % states.length],
-    zipCode: `${10000 + i * 100}`,
-    county: `${cities[i % cities.length]} County`,
-    status: statuses[i % statuses.length],
-    locations: AVAILABLE_LOCATIONS.slice(0, Math.floor(Math.random() * 5) + 3), // Random 3-7 locations
-    gallery: [], // Empty gallery for mock data
-  }
-})
-
 export function PropertiesPage() {
-  const [properties] = useState(mockProperties)
+  const { properties, loading, error, createProperty, updateProperty, deleteProperty } = useProperties()
+  const { propertyTypes } = usePropertyTypes()
+  const { propertyLocations } = usePropertyLocations()
+  const { toast } = useToast()
+  
   const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingProperty, setEditingProperty] = useState(null)
+  const [propertyToDelete, setPropertyToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const itemsPerPage = 10
 
   const form = useForm({
     resolver: zodResolver(propertySchema),
     defaultValues: {
       name: "",
-      type: "House",
+      typeId: "",
       streetAddress: "",
       unitNumber: "",
       city: "",
@@ -117,7 +92,7 @@ export function PropertiesPage() {
       zipCode: "",
       county: "",
       status: "Active",
-      locations: [],
+      locationIds: [],
       gallery: [],
     },
   })
@@ -144,6 +119,11 @@ export function PropertiesPage() {
     })
   }, [properties, searchQuery, typeFilter, statusFilter])
 
+  // Get unique property types for filter dropdown
+  const availableTypes = useMemo(() => {
+    return Array.from(new Set(properties.map((p) => p.type))).filter(Boolean)
+  }, [properties])
+
   const paginatedProperties = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     return filteredProperties.slice(startIndex, startIndex + itemsPerPage)
@@ -156,7 +136,7 @@ export function PropertiesPage() {
     if (property) {
       form.reset({
         name: property.name,
-        type: property.type,
+        typeId: property.typeId,
         streetAddress: property.streetAddress,
         unitNumber: property.unitNumber || "",
         city: property.city,
@@ -164,11 +144,23 @@ export function PropertiesPage() {
         zipCode: property.zipCode,
         county: property.county,
         status: property.status,
-        locations: property.locations || [],
+        locationIds: property.locations?.map((loc) => loc.id) || [],
         gallery: property.gallery || [],
       })
     } else {
-      form.reset()
+      form.reset({
+        name: "",
+        typeId: "",
+        streetAddress: "",
+        unitNumber: "",
+        city: "",
+        state: "",
+        zipCode: "",
+        county: "",
+        status: "Active",
+        locationIds: [],
+        gallery: [],
+      })
     }
     setIsDialogOpen(true)
   }
@@ -179,15 +171,119 @@ export function PropertiesPage() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    console.log(editingProperty ? "Update property:" : "Create property:", data)
-    handleCloseDialog()
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      // Separate new files from existing paths
+      const galleryValue = form.watch("gallery") || []
+      const newFiles = galleryValue.filter((item) => item instanceof File || (item && item.file))
+      const existingPaths = galleryValue.filter((item) => typeof item === "string" && !item.file)
+
+      // Extract File objects from preview objects
+      const filesToUpload = newFiles.map((item) => (item.file ? item.file : item)).filter((item) => item instanceof File)
+
+      const propertyData = {
+        name: data.name,
+        typeId: data.typeId,
+        streetAddress: data.streetAddress,
+        unitNumber: data.unitNumber || null,
+        city: data.city,
+        state: data.state,
+        zipCode: data.zipCode,
+        county: data.county,
+        status: data.status,
+        locationIds: data.locationIds || [],
+      }
+
+      if (editingProperty) {
+        // Determine which images to delete (existing paths not in current gallery)
+        const originalPaths = editingProperty.gallery || []
+        const imagesToDelete = originalPaths.filter((path) => !existingPaths.includes(path))
+
+        const result = await updateProperty(
+          editingProperty.id,
+          propertyData,
+          filesToUpload,
+          imagesToDelete
+        )
+
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update property. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createProperty(propertyData, filesToUpload)
+
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Property "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create property. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err.message || "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleDelete = (propertyId) => {
-    // Placeholder - no API yet
-    console.log("Delete property:", propertyId)
+  const handleDeleteClick = (property) => {
+    setPropertyToDelete(property)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!propertyToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteProperty(propertyToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Property "${propertyToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setPropertyToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete property. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setPropertyToDelete(null)
   }
 
   const getStatusColor = (status) => {
@@ -257,29 +353,29 @@ export function PropertiesPage() {
                     </FormMessage>
                   </FormItem>
                   <FormItem>
-                    <FormLabel htmlFor="type">Type</FormLabel>
+                    <FormLabel htmlFor="typeId">Type</FormLabel>
                     <FormControl>
                       <Select
-                        value={form.watch("type")}
+                        value={form.watch("typeId")}
                         onValueChange={(value) => {
-                          form.setValue("type", value)
-                          form.trigger("type")
+                          form.setValue("typeId", value)
+                          form.trigger("typeId")
                         }}
                       >
-                        <SelectTrigger id="type">
+                        <SelectTrigger id="typeId">
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {PROPERTY_TYPES.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
+                          {propertyTypes.map((type) => (
+                            <SelectItem key={type.id} value={type.id}>
+                              {type.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </FormControl>
                     <FormMessage>
-                      {form.formState.errors.type?.message}
+                      {form.formState.errors.typeId?.message}
                     </FormMessage>
                   </FormItem>
                 </div>
@@ -287,17 +383,17 @@ export function PropertiesPage() {
                   <FormLabel>Property Locations</FormLabel>
                   <FormControl>
                     <MultiSelect
-                      options={AVAILABLE_LOCATIONS}
-                      selected={form.watch("locations") || []}
-                      onChange={(locations) => {
-                        form.setValue("locations", locations)
-                        form.trigger("locations")
+                      options={propertyLocations.map((loc) => ({ value: loc.id, label: loc.name }))}
+                      selected={form.watch("locationIds") || []}
+                      onChange={(locationIds) => {
+                        form.setValue("locationIds", locationIds)
+                        form.trigger("locationIds")
                       }}
                       placeholder="Select property locations..."
                     />
                   </FormControl>
                   <FormMessage>
-                    {form.formState.errors.locations?.message}
+                    {form.formState.errors.locationIds?.message}
                   </FormMessage>
                 </FormItem>
                 <FormItem>
@@ -469,15 +565,19 @@ export function PropertiesPage() {
                     type="button"
                     variant="outline"
                     onClick={handleCloseDialog}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingProperty
-                      ? "Update Property"
-                      : "Create Property"}
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingProperty ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingProperty ? "Update Property" : "Create Property"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -508,7 +608,7 @@ export function PropertiesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  {PROPERTY_TYPES.map((type) => (
+                  {availableTypes.map((type) => (
                     <SelectItem key={type} value={type}>
                       {type}
                     </SelectItem>
@@ -534,75 +634,87 @@ export function PropertiesPage() {
             </div>
           </div>
 
+          {error && (
+            <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           <div className="mt-4 rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>City</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Zip Code</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedProperties.length === 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      No properties found.
-                    </TableCell>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead>City</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Zip Code</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  paginatedProperties.map((property) => (
-                    <TableRow key={property.id}>
-                      <TableCell className="font-medium">
-                        {property.name}
-                      </TableCell>
-                      <TableCell>
-                        <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                          {property.type}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {property.streetAddress}
-                        {property.unitNumber && (
-                          <span className="text-muted-foreground">, {property.unitNumber}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{property.city}</TableCell>
-                      <TableCell>{property.state}</TableCell>
-                      <TableCell>{property.zipCode}</TableCell>
-                      <TableCell>
-                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(property.status)}`}>
-                          {property.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(property)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(property.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {paginatedProperties.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="h-24 text-center">
+                        No properties found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    paginatedProperties.map((property) => (
+                      <TableRow key={property.id}>
+                        <TableCell className="font-medium">
+                          {property.name}
+                        </TableCell>
+                        <TableCell>
+                          <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                            {property.type}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {property.streetAddress}
+                          {property.unitNumber && (
+                            <span className="text-muted-foreground">, {property.unitNumber}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{property.city}</TableCell>
+                        <TableCell>{property.state}</TableCell>
+                        <TableCell>{property.zipCode}</TableCell>
+                        <TableCell>
+                          <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(property.status)}`}>
+                            {property.status}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(property)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(property)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
 
           {totalPages > 1 && (

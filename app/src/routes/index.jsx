@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router"
 import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { UsersPage } from "@/pages/users"
+import { TenantsPage } from "@/pages/tenants"
 import { PropertiesPage } from "@/pages/properties"
 import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
@@ -42,6 +43,10 @@ export const router = createBrowserRouter([
       {
         path: "users",
         element: <UsersPage />,
+      },
+      {
+        path: "tenants",
+        element: <TenantsPage />,
       },
       {
         path: "properties",

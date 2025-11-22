@@ -17,17 +17,33 @@ export function MultiSelect({
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
 
-  const handleToggle = (option) => {
-    if (selected.includes(option)) {
-      onChange(selected.filter((item) => item !== option))
+  // Normalize options to handle both string arrays and object arrays
+  const normalizedOptions = React.useMemo(() => {
+    return options.map((opt) => {
+      if (typeof opt === "string") {
+        return { value: opt, label: opt }
+      }
+      return opt
+    })
+  }, [options])
+
+  // Get label for a value
+  const getLabel = (value) => {
+    const option = normalizedOptions.find((opt) => opt.value === value)
+    return option?.label || value
+  }
+
+  const handleToggle = (optionValue) => {
+    if (selected.includes(optionValue)) {
+      onChange(selected.filter((item) => item !== optionValue))
     } else {
-      onChange([...selected, option])
+      onChange([...selected, optionValue])
     }
   }
 
-  const handleRemove = (option, e) => {
+  const handleRemove = (optionValue, e) => {
     e.stopPropagation()
-    onChange(selected.filter((item) => item !== option))
+    onChange(selected.filter((item) => item !== optionValue))
   }
 
   return (
@@ -40,7 +56,7 @@ export function MultiSelect({
               key={item}
               className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary"
             >
-              {item}
+              {getLabel(item)}
               <button
                 type="button"
                 onClick={(e) => handleRemove(item, e)}
@@ -79,13 +95,13 @@ export function MultiSelect({
                 No options available
               </div>
             ) : (
-              options.map((option) => {
-                const isSelected = selected.includes(option)
+              normalizedOptions.map((option) => {
+                const isSelected = selected.includes(option.value)
                 return (
                   <button
-                    key={option}
+                    key={option.value}
                     type="button"
-                    onClick={() => handleToggle(option)}
+                    onClick={() => handleToggle(option.value)}
                     className={cn(
                       "relative flex w-full cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
                       "bg-white",
@@ -105,7 +121,7 @@ export function MultiSelect({
                       >
                         {isSelected && <Check className="h-3 w-3" />}
                       </div>
-                      <span>{option}</span>
+                      <span>{option.label}</span>
                     </div>
                   </button>
                 )
