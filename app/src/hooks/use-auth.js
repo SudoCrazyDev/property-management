@@ -28,16 +28,20 @@ export function useAuth() {
     // Poll for session expiration
     const interval = setInterval(() => {
       const currentUser = getCurrentUser()
-      if (!currentUser && user) {
-        setUser(null)
-      }
+      setUser((prevUser) => {
+        // Only update if user state actually changed
+        if (!currentUser && prevUser) {
+          return null
+        }
+        return prevUser
+      })
     }, 60000) // Check every minute
 
     return () => {
       window.removeEventListener('storage', handleStorageChange)
       clearInterval(interval)
     }
-  }, [user])
+  }, []) // Empty dependency array - only run once on mount
 
   const logout = () => {
     authSignOut()

@@ -2,7 +2,9 @@ import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, Edit, Trash2 } from "lucide-react"
+import { Plus, Edit, Trash2, Loader2 } from "lucide-react"
+import { useRoles } from "@/hooks/use-roles"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -93,9 +95,14 @@ const initialInspectorAttributeStatuses = ["Pass", "Fail", "N/A", "Needs Attenti
 const initialTechnicianAttributeStatuses = ["Fixed", "Not Fixed", "N/A", "Pending"]
 
 function RolesTab() {
-  const [roles, setRoles] = useState(initialRoles)
+  const { roles, loading, error, createRole, updateRole, deleteRole } = useRoles()
+  const { toast } = useToast()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingRole, setEditingRole] = useState(null)
+  const [roleToDelete, setRoleToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(roleSchema),
@@ -107,7 +114,7 @@ function RolesTab() {
   const handleOpenDialog = (role = null) => {
     setEditingRole(role)
     if (role) {
-      form.reset({ name: role })
+      form.reset({ name: role.name })
     } else {
       form.reset()
     }
@@ -120,19 +127,81 @@ function RolesTab() {
     form.reset()
   }
 
-  const onSubmit = (data) => {
-    // Placeholder - no API yet
-    if (editingRole) {
-      setRoles(roles.map((r) => (r === editingRole ? data.name : r)))
-    } else {
-      setRoles([...roles, data.name])
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingRole) {
+        const result = await updateRole(editingRole.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Role "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update role. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createRole(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `Role "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create role. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
     }
-    handleCloseDialog()
   }
 
-  const handleDelete = (role) => {
-    // Placeholder - no API yet
-    setRoles(roles.filter((r) => r !== role))
+  const handleDeleteClick = (role) => {
+    setRoleToDelete(role)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!roleToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteRole(roleToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Role "${roleToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setRoleToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete role. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setRoleToDelete(null)
   }
 
   return (
@@ -156,101 +225,157 @@ function RolesTab() {
               </Button>
             </motion.div>
           </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingRole ? "Edit Role" : "Create New Role"}
-              </DialogTitle>
-              <DialogDescription>
-                {editingRole
-                  ? "Update the role name below."
-                  : "Enter a name for the new role."}
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormItem>
-                  <FormLabel htmlFor="roleName">Role Name</FormLabel>
-                  <FormControl>
-                    <Input
-                      id="roleName"
-                      placeholder="e.g., Manager"
-                      {...form.register("name")}
-                    />
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.name?.message}
-                  </FormMessage>
-                </FormItem>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleCloseDialog}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting
-                      ? "Saving..."
-                      : editingRole
-                      ? "Update Role"
-                      : "Create Role"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingRole ? "Edit Role" : "Create New Role"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingRole
+                ? "Update the role name below."
+                : "Enter a name for the new role."}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormItem>
+                <FormLabel htmlFor="roleName">Role Name</FormLabel>
+                <FormControl>
+                  <Input
+                    id="roleName"
+                    placeholder="e.g., Manager"
+                    {...form.register("name")}
+                  />
+                </FormControl>
+                <FormMessage>
+                  {form.formState.errors.name?.message}
+                </FormMessage>
+              </FormItem>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseDialog}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {editingRole ? "Updating..." : "Creating..."}
+                    </>
+                  ) : (
+                    editingRole ? "Update" : "Create"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
           </DialogContent>
         </Dialog>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="pt-6">
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Role Name</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {roles.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={2} className="h-24 text-center">
-                      No roles found.
-                    </TableCell>
+                    <TableHead>Role Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  roles.map((role) => (
-                    <TableRow key={role}>
-                      <TableCell className="font-medium">{role}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(role)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(role)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {roles.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No roles found.
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    roles.map((role) => (
+                      <TableRow key={role.id}>
+                        <TableCell className="font-medium">{role.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(role)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(role)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Role</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{roleToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

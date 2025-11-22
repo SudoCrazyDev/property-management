@@ -7,7 +7,6 @@ import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
 import { InspectorPage } from "@/pages/inspector"
 import { TechnicianPage } from "@/pages/technician"
-import { AdminSetupPage } from "@/pages/admin-setup"
 import { PrivateLayout } from "@/components/layout/private-layout"
 import { isAuthenticated } from "@/lib/auth"
 
@@ -15,14 +14,6 @@ import { isAuthenticated } from "@/lib/auth"
 const PublicRoute = ({ children }) => {
   if (isAuthenticated()) {
     return <Navigate to="/dashboard" replace />
-  }
-  return children
-}
-
-// Private route wrapper
-const PrivateRoute = ({ children }) => {
-  if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />
   }
   return children
 }
@@ -37,16 +28,8 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: "/admin-setup",
-    element: <AdminSetupPage />,
-  },
-  {
     path: "/",
-    element: (
-      <PrivateRoute>
-        <PrivateLayout />
-      </PrivateRoute>
-    ),
+    element: <PrivateLayout />,
     children: [
       {
         index: true,
