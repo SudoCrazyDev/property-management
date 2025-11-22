@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { motion, AnimatePresence } from "motion/react"
 import { cn } from "@/lib/utils"
 
@@ -115,6 +116,52 @@ const mockJobs = [
           status: "Not Fixed",
           inspectorStatus: "Fail",
           files: ["file3.jpg"],
+        },
+      ],
+    },
+  },
+  {
+    id: 4,
+    jobType: "Move Out",
+    date: "2024-01-10",
+    property: {
+      id: 4,
+      name: "House 4",
+      address: "321 Elm St, Boston, MA 02101",
+      locations: ["Living Room", "Kitchen"],
+    },
+    status: "Done",
+    attributes: {
+      "Living Room": [
+        {
+          id: 5,
+          name: "Walls",
+          status: "Fixed",
+          inspectorStatus: "Pass",
+          files: [],
+        },
+      ],
+    },
+  },
+  {
+    id: 5,
+    jobType: "Move In",
+    date: "2024-01-05",
+    property: {
+      id: 5,
+      name: "Apartment 5",
+      address: "654 Maple Dr, Seattle, WA 98101",
+      locations: ["Entryway/Hallways"],
+    },
+    status: "For QA",
+    attributes: {
+      "Entryway/Hallways": [
+        {
+          id: 6,
+          name: "Flooring",
+          status: "Fixed",
+          inspectorStatus: "Pass",
+          files: [],
         },
       ],
     },
@@ -752,12 +799,46 @@ function JobCard({ job, onUpdate }) {
 
 export function TechnicianPage() {
   const [jobs, setJobs] = useState(mockJobs)
+  const [activeTab, setActiveTab] = useState("available")
 
   const handleJobUpdate = (updatedJob) => {
     setJobs(jobs.map((j) => (j.id === updatedJob.id ? updatedJob : j)))
   }
 
-  const assignedJobs = jobs.filter((job) => job.status === "On-Going Technician" || job.status === "Waiting for Technician")
+  const availableJobs = jobs.filter((job) => job.status === "Waiting for Technician")
+  const activeJobs = jobs.filter((job) => job.status === "On-Going Technician")
+  const previousJobs = jobs.filter((job) => 
+    job.status === "Done" || 
+    job.status === "For QA" ||
+    job.status === "Draft"
+  )
+
+  const renderJobs = (jobsList) => {
+    if (jobsList.length === 0) {
+      return (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground">No jobs in this category.</p>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        {jobsList.map((job, index) => (
+          <motion.div
+            key={job.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+          >
+            <JobCard job={job} onUpdate={handleJobUpdate} />
+          </motion.div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto space-y-4 md:space-y-6 p-4 md:p-6 max-w-7xl">
@@ -772,26 +853,28 @@ export function TechnicianPage() {
         </p>
       </motion.div>
 
-      {assignedJobs.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <p className="text-muted-foreground">No jobs assigned at the moment.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {assignedJobs.map((job, index) => (
-            <motion.div
-              key={job.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <JobCard job={job} onUpdate={handleJobUpdate} />
-            </motion.div>
-          ))}
-        </div>
-      )}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="available">
+            Available Jobs ({availableJobs.length})
+          </TabsTrigger>
+          <TabsTrigger value="active">
+            Active Jobs ({activeJobs.length})
+          </TabsTrigger>
+          <TabsTrigger value="previous">
+            Previous Jobs ({previousJobs.length})
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="available" className="mt-6">
+          {renderJobs(availableJobs)}
+        </TabsContent>
+        <TabsContent value="active" className="mt-6">
+          {renderJobs(activeJobs)}
+        </TabsContent>
+        <TabsContent value="previous" className="mt-6">
+          {renderJobs(previousJobs)}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
