@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, UserCog, Settings, LogOut, Briefcase } from "lucide-react"
+import { LayoutDashboard, Building2, UserCog, Settings, LogOut, Briefcase, ClipboardCheck, Wrench } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
@@ -23,6 +23,16 @@ const menuItems = [
     title: "Jobs",
     icon: Briefcase,
     href: "/jobs",
+  },
+  {
+    title: "Inspector",
+    icon: ClipboardCheck,
+    href: "/inspector",
+  },
+  {
+    title: "Technician",
+    icon: Wrench,
+    href: "/technician",
   },
   {
     title: "Settings",

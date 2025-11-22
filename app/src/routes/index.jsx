@@ -5,6 +5,8 @@ import { UsersPage } from "@/pages/users"
 import { PropertiesPage } from "@/pages/properties"
 import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
+import { InspectorPage } from "@/pages/inspector"
+import { TechnicianPage } from "@/pages/technician"
 import { PrivateLayout } from "@/components/layout/private-layout"
 
 // Placeholder auth check - replace with actual auth logic later
@@ -70,6 +72,14 @@ export const router = createBrowserRouter([
       {
         path: "settings",
         element: <SettingsPage />,
+      },
+      {
+        path: "inspector",
+        element: <InspectorPage />,
+      },
+      {
+        path: "technician",
+        element: <TechnicianPage />,
       },
     ],
   },

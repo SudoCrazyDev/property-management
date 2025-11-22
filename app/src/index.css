@@ -93,6 +93,28 @@ html {
   }
 }
 
+@keyframes slide-in-from-bottom {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-to-bottom {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
 /* Apply spring-like easing to drawer animations */
 [data-state="open"][data-side="left"] {
   animation: slide-in-from-left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -108,4 +130,12 @@ html {
 
 [data-state="closed"][data-side="right"] {
   animation: slide-out-to-right 0.3s cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-state="open"][data-side="bottom"] {
+  animation: slide-in-from-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-state="closed"][data-side="bottom"] {
+  animation: slide-out-to-bottom 0.3s cubic-bezier(0.4, 0, 1, 1);
 }
