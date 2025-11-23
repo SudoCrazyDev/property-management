@@ -4,51 +4,60 @@ import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
 import { useAuth } from "@/hooks/use-auth"
 
-const menuItems = [
+const allMenuItems = [
   {
     title: "Dashboard",
     icon: LayoutDashboard,
     href: "/dashboard",
+    roles: ["Admin", "Inspector", "Technician", "QA"], // All roles can see Dashboard
   },
   {
     title: "Properties",
     icon: Building2,
     href: "/properties",
+    roles: ["Admin"], // Only Admin can see Properties
   },
   {
     title: "Users",
     icon: UserCog,
     href: "/users",
+    roles: ["Admin"], // Only Admin can see Users
   },
   {
     title: "Tenants",
     icon: Users,
     href: "/tenants",
+    roles: ["Admin"], // Only Admin can see Tenants
   },
   {
     title: "Jobs",
     icon: Briefcase,
     href: "/jobs",
+    roles: ["Admin"], // Only Admin can see Jobs
   },
   {
     title: "Inspector",
     icon: ClipboardCheck,
     href: "/inspector",
+    roles: ["Admin", "Inspector"], // Admin and Inspector can see Inspector menu
   },
   {
     title: "Technician",
     icon: Wrench,
     href: "/technician",
+    roles: ["Admin", "Technician"], // Admin and Technician can see Technician menu
   },
   {
     title: "QA",
     icon: CheckSquare,
     href: "/qa",
+    roles: ["Admin", "QA"], // Admin and QA can see QA menu
   },
   {
     title: "Settings",
     icon: Settings,
     href: "/settings",
+    roles: ["Admin"], // Only Admin can see Settings
   },
 ]
 
@@ -56,6 +65,19 @@ export function SideMenu({ onLinkClick }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+
+  // Get user role
+  const userRole = user?.roles?.name || null
+
+  // Filter menu items based on user role
+  const menuItems = allMenuItems.filter((item) => {
+    // Admin sees all menus
+    if (userRole === "Admin") {
+      return true
+    }
+    // Other roles only see menus that include their role
+    return item.roles.includes(userRole)
+  })
 
   const handleLogout = () => {
     logout()
