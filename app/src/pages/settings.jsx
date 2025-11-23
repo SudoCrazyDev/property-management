@@ -10,6 +10,7 @@ import { useLocationAttributes } from "@/hooks/use-location-attributes"
 import { useJobTypes } from "@/hooks/use-job-types"
 import { useInspectorStatuses } from "@/hooks/use-inspector-statuses"
 import { useTechnicianStatuses } from "@/hooks/use-technician-statuses"
+import { useQAStatuses } from "@/hooks/use-qa-statuses"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -73,6 +74,10 @@ const inspectorAttributeStatusSchema = z.object({
 })
 
 const technicianAttributeStatusSchema = z.object({
+  name: z.string().min(1, "Status name is required"),
+})
+
+const qaAttributeStatusSchema = z.object({
   name: z.string().min(1, "Status name is required"),
 })
 
@@ -2095,6 +2100,292 @@ function TechnicianAttributeStatusesTab() {
   )
 }
 
+function QAAttributeStatusesTab() {
+  const { qaStatuses, loading, error, createQAStatus, updateQAStatus, deleteQAStatus } = useQAStatuses()
+  const { toast } = useToast()
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [editingStatus, setEditingStatus] = useState(null)
+  const [statusToDelete, setStatusToDelete] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const form = useForm({
+    resolver: zodResolver(qaAttributeStatusSchema),
+    defaultValues: {
+      name: "",
+    },
+  })
+
+  const handleOpenDialog = (status = null) => {
+    setEditingStatus(status)
+    if (status) {
+      form.reset({ name: status.name })
+    } else {
+      form.reset()
+    }
+    setIsDialogOpen(true)
+  }
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false)
+    setEditingStatus(null)
+    form.reset()
+  }
+
+  const onSubmit = async (data) => {
+    setIsSubmitting(true)
+    try {
+      if (editingStatus) {
+        const result = await updateQAStatus(editingStatus.id, data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `QA status "${data.name}" has been updated successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to update QA status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        const result = await createQAStatus(data.name)
+        if (result.success) {
+          toast({
+            title: "Success",
+            description: `QA status "${data.name}" has been created successfully.`,
+            variant: "success",
+          })
+          handleCloseDialog()
+        } else {
+          toast({
+            title: "Error",
+            description: result.error || "Failed to create QA status. Please try again.",
+            variant: "destructive",
+          })
+        }
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteClick = (status) => {
+    setStatusToDelete(status)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!statusToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const result = await deleteQAStatus(statusToDelete.id)
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `QA status "${statusToDelete.name}" has been deleted successfully.`,
+          variant: "success",
+        })
+        setIsDeleteDialogOpen(false)
+        setStatusToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete QA status. Please try again.",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setIsDeleteDialogOpen(false)
+    setStatusToDelete(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">QA Attribute Statuses</h2>
+          <p className="text-muted-foreground">
+            Manage statuses for QA attributes
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Status
+              </Button>
+            </motion.div>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editingStatus ? "Edit Status" : "Create New Status"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingStatus
+                  ? "Update the status name below."
+                  : "Enter a name for the new status."}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormItem>
+                  <FormLabel htmlFor="statusName">Status Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="statusName"
+                      placeholder="e.g., Passed"
+                      {...form.register("name")}
+                    />
+                  </FormControl>
+                  <FormMessage>
+                    {form.formState.errors.name?.message}
+                  </FormMessage>
+                </FormItem>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCloseDialog}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {editingStatus ? "Updating..." : "Creating..."}
+                      </>
+                    ) : (
+                      editingStatus ? "Update" : "Create"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="pt-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Status Name</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {qaStatuses.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No statuses found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    qaStatuses.map((status) => (
+                      <TableRow key={status.id}>
+                        <TableCell className="font-medium">{status.name}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDialog(status)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteClick(status)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete QA Status</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{statusToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDeleteCancel}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState("roles")
 
@@ -2119,6 +2410,7 @@ export function SettingsPage() {
         { id: "job-types", label: "Job Types", component: <JobTypesTab /> },
         { id: "inspector-statuses", label: "Inspector Statuses", component: <InspectorAttributeStatusesTab /> },
         { id: "technician-statuses", label: "Technician Statuses", component: <TechnicianAttributeStatusesTab /> },
+        { id: "qa-statuses", label: "QA Statuses", component: <QAAttributeStatusesTab /> },
       ],
     },
   ]

@@ -57,6 +57,7 @@ const JOB_STATUSES = [
   "Waiting for Technician",
   "On-Going Technician",
   "For QA",
+  "On-Going QA",
   "Done",
 ]
 
@@ -291,6 +292,7 @@ export function JobsPage() {
         return "bg-blue-500/10 text-blue-700 dark:text-blue-400"
       case "On-Going Inspection":
       case "On-Going Technician":
+      case "On-Going QA":
         return "bg-orange-500/10 text-orange-700 dark:text-orange-400"
       case "Waiting for Inspector":
       case "Waiting for Technician":

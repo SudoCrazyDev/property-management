@@ -29,16 +29,36 @@ import { usePropertyLocations } from "@/hooks/use-property-locations"
 import { useLocationAttributes } from "@/hooks/use-location-attributes"
 import { useInspectorStatuses } from "@/hooks/use-inspector-statuses"
 import { useTechnicianStatuses } from "@/hooks/use-technician-statuses"
+import { useQAStatuses } from "@/hooks/use-qa-statuses"
+import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 import { getImageUrl } from "@/lib/file-upload"
 
 // AttributeCard with side-by-side comparison of Inspector and Technician images
-function AttributeCard({ attribute, locationName, inspectorChecklist, technicianChecklist }) {
+function AttributeCard({ 
+  attribute, 
+  locationName, 
+  inspectorChecklist, 
+  technicianChecklist,
+  qaChecklist,
+  qaStatuses,
+  locationId,
+  attributeId,
+  jobId,
+  onUpdateQAChecklist
+}) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [selectedImageType, setSelectedImageType] = useState("inspector") // "inspector" or "technician"
-  const [notes, setNotes] = useState("") // Placeholder for notes
+  const [notes, setNotes] = useState(qaChecklist?.notes || "")
+  const [qaStatus, setQAStatus] = useState(qaChecklist?.status || "")
+  
+  // Sync notes and status when qaChecklist changes
+  useEffect(() => {
+    setNotes(qaChecklist?.notes || "")
+    setQAStatus(qaChecklist?.status || "")
+  }, [qaChecklist])
   
   const inspectorStatus = inspectorChecklist?.status || ""
   const inspectorImages = inspectorChecklist?.files || []
@@ -99,6 +119,23 @@ function AttributeCard({ attribute, locationName, inspectorChecklist, technician
       return "bg-gray-100 text-gray-800 border-gray-300"
     }
     return "bg-muted text-muted-foreground border-border"
+  }
+
+  const handleStatusChange = (statusName, statusId) => {
+    setQAStatus(statusName)
+    // Update local state only, don't save to DB yet
+    if (onUpdateQAChecklist) {
+      onUpdateQAChecklist(jobId, locationId, attributeId, statusId, notes)
+    }
+  }
+
+  const handleNotesChange = (newNotes) => {
+    setNotes(newNotes)
+    // Update local state only, don't save to DB yet
+    if (onUpdateQAChecklist) {
+      const statusId = qaStatuses.find(s => s.name === qaStatus)?.id || null
+      onUpdateQAChecklist(jobId, locationId, attributeId, statusId, newNotes)
+    }
   }
 
   const currentImages = selectedImageType === "inspector" ? inspectorImages : technicianImages
@@ -268,21 +305,54 @@ function AttributeCard({ attribute, locationName, inspectorChecklist, technician
                 </div>
               </div>
 
-              {/* Notes Section */}
-              <div className="space-y-2 border-t pt-4">
-                <label className="block text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  QA Notes
-                </label>
-                <Textarea
-                  placeholder="Add notes if you find any discrepancies or issues..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="min-h-[100px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Note: Notes functionality is a placeholder. API integration will be added later.
-                </p>
+              {/* QA Status and Notes Section */}
+              <div className="space-y-4 border-t pt-4">
+                {/* QA Status Selection */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">
+                    QA Status
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {qaStatuses.map((status) => (
+                      <button
+                        key={status.id}
+                        type="button"
+                        onClick={() => handleStatusChange(status.name, status.id)}
+                        className={cn(
+                          "px-4 py-2 rounded-full border text-sm font-medium transition-all",
+                          qaStatus === status.name
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background hover:bg-accent border-border"
+                        )}
+                      >
+                        {status.name}
+                      </button>
+                    ))}
+                    {qaStatus && (
+                      <button
+                        type="button"
+                        onClick={() => handleStatusChange("", null)}
+                        className="px-4 py-2 rounded-full border text-sm font-medium transition-all bg-background hover:bg-accent border-border text-muted-foreground"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notes Section */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    QA Notes
+                  </label>
+                  <Textarea
+                    placeholder="Add notes if you find any discrepancies or issues..."
+                    value={notes}
+                    onChange={(e) => handleNotesChange(e.target.value)}
+                    className="min-h-[100px]"
+                  />
+                </div>
               </div>
             </CardContent>
           </motion.div>
@@ -347,23 +417,36 @@ function AttributeCard({ attribute, locationName, inspectorChecklist, technician
 }
 
 // LocationSection - shows attributes with inspector and technician checklists
-function LocationSection({ locationName, attributes, inspectorAttributes, technicianAttributes }) {
+function LocationSection({ 
+  locationName, 
+  attributes, 
+  inspectorAttributes, 
+  technicianAttributes,
+  qaAttributes,
+  qaStatuses,
+  locationId,
+  jobId,
+  onUpdateQAChecklist
+}) {
   const [isExpanded, setIsExpanded] = useState(true)
 
   // Merge inspector and technician attributes
   const mergedAttributes = useMemo(() => {
-    const inspector = inspectorAttributes[locationName] || []
-    const technician = technicianAttributes[locationName] || []
+    const inspector = (inspectorAttributes && inspectorAttributes[locationName]) || []
+    const technician = (technicianAttributes && technicianAttributes[locationName]) || []
+    const qa = (qaAttributes && qaAttributes[locationName]) || []
     
     return inspector.map((inspAttr) => {
       const techAttr = technician.find((t) => t.id === inspAttr.id || t.name === inspAttr.name)
+      const qaAttr = qa.find((q) => q.id === inspAttr.id || q.name === inspAttr.name)
       return {
         ...inspAttr,
         ...techAttr,
-        id: inspAttr.id || techAttr?.id,
+        ...qaAttr,
+        id: inspAttr.id || techAttr?.id || qaAttr?.id,
       }
     })
-  }, [inspectorAttributes, technicianAttributes, locationName])
+  }, [inspectorAttributes, technicianAttributes, qaAttributes, locationName])
 
   return (
     <Card className="overflow-hidden">
@@ -407,6 +490,15 @@ function LocationSection({ locationName, attributes, inspectorAttributes, techni
                     status: attribute.technicianStatus || "",
                     files: attribute.technicianFiles || [],
                   }}
+                  qaChecklist={{
+                    status: attribute.qaStatus || "",
+                    notes: attribute.qaNotes || "",
+                  }}
+                  qaStatuses={qaStatuses}
+                  locationId={locationId}
+                  attributeId={attribute.id}
+                  jobId={jobId}
+                  onUpdateQAChecklist={onUpdateQAChecklist}
                 />
               ))}
               {mergedAttributes.length === 0 && (
@@ -422,20 +514,56 @@ function LocationSection({ locationName, attributes, inspectorAttributes, techni
   )
 }
 
-function JobCard({ job, inspectorAttributes, technicianAttributes }) {
+function JobCard({ 
+  job, 
+  inspectorAttributes, 
+  technicianAttributes,
+  qaAttributes,
+  qaStatuses,
+  propertyLocations,
+  onStartJob, 
+  showStartJobButton, 
+  isStartingJob,
+  onUpdateQAChecklist,
+  onMarkDone,
+  isMarkingDone
+}) {
   const [isExpanded, setIsExpanded] = useState(false)
+
+  const handleStartJob = async () => {
+    if (onStartJob && !isStartingJob) {
+      await onStartJob(job.id)
+      setIsExpanded(true)
+    }
+  }
+
+  const handleMarkDone = async () => {
+    if (onMarkDone && !isMarkingDone) {
+      await onMarkDone(job.id)
+    }
+  }
+
+  const showDoneButton = !showStartJobButton && job.status === "On-Going QA"
 
   const jobContent = (
     <div className="space-y-4">
-      {(job.property?.locations || []).map((locationName) => (
-        <LocationSection
-          key={locationName}
-          locationName={locationName}
-          attributes={[]}
-          inspectorAttributes={inspectorAttributes || {}}
-          technicianAttributes={technicianAttributes || {}}
-        />
-      ))}
+      {(job.property?.locations || []).map((locationName) => {
+        const location = propertyLocations?.find(loc => loc.name === locationName)
+        return (
+          <LocationSection
+            key={locationName}
+            locationName={locationName}
+            attributes={[]}
+            inspectorAttributes={inspectorAttributes || {}}
+            technicianAttributes={technicianAttributes || {}}
+            qaAttributes={qaAttributes || {}}
+            qaStatuses={qaStatuses || []}
+            locationId={location?.id}
+            jobId={job.id}
+            onUpdateQAChecklist={onUpdateQAChecklist}
+          />
+        )
+      })}
     </div>
   )
 
@@ -498,6 +626,44 @@ function JobCard({ job, inspectorAttributes, technicianAttributes }) {
           <div className="flex-1 overflow-y-auto p-4 min-h-0">
             {jobContent}
           </div>
+          {(showStartJobButton || showDoneButton) && (
+            <div className="sticky bottom-0 border-t bg-background p-4 flex-shrink-0">
+              {showStartJobButton && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handleStartJob}
+                  disabled={isStartingJob}
+                >
+                  {isStartingJob ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Starting Job...
+                    </>
+                  ) : (
+                    "Start Job"
+                  )}
+                </Button>
+              )}
+              {showDoneButton && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handleMarkDone}
+                  disabled={isMarkingDone}
+                >
+                  {isMarkingDone ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Marking as Done...
+                    </>
+                  ) : (
+                    "Done"
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </SheetContent>
       </Sheet>
 
@@ -545,6 +711,44 @@ function JobCard({ job, inspectorAttributes, technicianAttributes }) {
               <CardContent className="space-y-4 p-6 pt-0 max-h-[70vh] overflow-y-auto">
                 {jobContent}
               </CardContent>
+              {(showStartJobButton || showDoneButton) && (
+                <div className="border-t bg-background p-6 pt-0">
+                  {showStartJobButton && (
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={handleStartJob}
+                      disabled={isStartingJob}
+                    >
+                      {isStartingJob ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Starting Job...
+                        </>
+                      ) : (
+                        "Start Job"
+                      )}
+                    </Button>
+                  )}
+                  {showDoneButton && (
+                    <Button
+                      type="button"
+                      className="w-full"
+                      onClick={handleMarkDone}
+                      disabled={isMarkingDone}
+                    >
+                      {isMarkingDone ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Marking as Done...
+                        </>
+                      ) : (
+                        "Done"
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -555,27 +759,33 @@ function JobCard({ job, inspectorAttributes, technicianAttributes }) {
 
 export function QAPage() {
   const { user } = useAuth()
-  const { jobs, loading } = useJobs()
+  const { jobs, loading, updateJob, refetch } = useJobs()
   const { properties } = useProperties()
   const { propertyLocations } = usePropertyLocations()
   const { locationAttributes } = useLocationAttributes()
   const { inspectorStatuses } = useInspectorStatuses()
   const { technicianStatuses } = useTechnicianStatuses()
+  const { qaStatuses } = useQAStatuses()
+  const { toast } = useToast()
   
   const [activeTab, setActiveTab] = useState("available")
   const [inspectorChecklists, setInspectorChecklists] = useState({})
   const [technicianChecklists, setTechnicianChecklists] = useState({})
+  const [qaChecklists, setQAChecklists] = useState({})
+  const [isStartingJob, setIsStartingJob] = useState(false)
+  const [isMarkingDone, setIsMarkingDone] = useState(false)
 
   const currentQAId = user?.id
 
   // Fetch inspector checklists
   useEffect(() => {
-    if (!currentQAId || jobs.length === 0) return
+    if (jobs.length === 0) return
 
     const fetchInspectorChecklists = async () => {
       try {
+        // Fetch checklists for all "For QA" and "On-Going QA" jobs
         const jobIds = jobs
-          .filter((job) => job.status === "For QA")
+          .filter((job) => job.status === "For QA" || job.status === "On-Going QA")
           .map((job) => job.id)
 
         if (jobIds.length === 0) return
@@ -638,16 +848,17 @@ export function QAPage() {
     }
 
     fetchInspectorChecklists()
-  }, [currentQAId, jobs])
+  }, [jobs])
 
   // Fetch technician checklists
   useEffect(() => {
-    if (!currentQAId || jobs.length === 0) return
+    if (jobs.length === 0) return
 
     const fetchTechnicianChecklists = async () => {
       try {
+        // Fetch checklists for all "For QA" and "On-Going QA" jobs
         const jobIds = jobs
-          .filter((job) => job.status === "For QA")
+          .filter((job) => job.status === "For QA" || job.status === "On-Going QA")
           .map((job) => job.id)
 
         if (jobIds.length === 0) return
@@ -710,17 +921,162 @@ export function QAPage() {
     }
 
     fetchTechnicianChecklists()
-  }, [currentQAId, jobs])
+  }, [jobs])
+
+  // Fetch QA checklists
+  useEffect(() => {
+    if (jobs.length === 0) return
+
+    const fetchQAChecklists = async () => {
+      try {
+        const jobIds = jobs
+          .filter((job) => job.status === "For QA" || job.status === "On-Going QA")
+          .map((job) => job.id)
+
+        if (jobIds.length === 0) return
+
+        const { data: checklists, error } = await supabase
+          .from("qa_checklists")
+          .select(`
+            *,
+            location:property_locations(id, name),
+            attribute:location_attributes(id, name),
+            status:qa_statuses(id, name)
+          `)
+          .in("job_id", jobIds)
+
+        if (error) {
+          console.error("Error fetching QA checklists:", error)
+          return
+        }
+
+        const checklistsByJob = {}
+        checklists?.forEach((checklist) => {
+          const jobId = checklist.job_id
+          const locationName = checklist.location?.name
+          const attributeName = checklist.attribute?.name
+          const statusName = checklist.status?.name || ""
+          const notes = checklist.notes || ""
+
+          if (!checklistsByJob[jobId]) {
+            checklistsByJob[jobId] = {}
+          }
+          if (!checklistsByJob[jobId][locationName]) {
+            checklistsByJob[jobId][locationName] = []
+          }
+
+          const existingIndex = checklistsByJob[jobId][locationName].findIndex(
+            (attr) => attr.name === attributeName
+          )
+
+          if (existingIndex >= 0) {
+            checklistsByJob[jobId][locationName][existingIndex] = {
+              id: checklist.attribute_id,
+              name: attributeName,
+              qaStatus: statusName,
+              qaNotes: notes,
+            }
+          } else {
+            checklistsByJob[jobId][locationName].push({
+              id: checklist.attribute_id,
+              name: attributeName,
+              qaStatus: statusName,
+              qaNotes: notes,
+            })
+          }
+        })
+
+        setQAChecklists(checklistsByJob)
+      } catch (error) {
+        console.error("Error in fetchQAChecklists:", error)
+      }
+    }
+
+    fetchQAChecklists()
+  }, [jobs])
+
+  // Local state to store QA checklist changes (not saved to DB until "Done" is clicked)
+  const [localQAChecklists, setLocalQAChecklists] = useState({})
+
+  const handleUpdateQAChecklist = (jobId, locationId, attributeId, statusId, notes) => {
+    // Update local state only, don't save to DB yet
+    const location = propertyLocations.find(loc => loc.id === locationId)
+    const attribute = locationAttributes.find(attr => attr.id === attributeId)
+    const status = qaStatuses.find(s => s.id === statusId)
+    
+    setLocalQAChecklists((prev) => {
+      const updated = { ...prev }
+      
+      if (!updated[jobId]) {
+        updated[jobId] = {}
+      }
+      if (!updated[jobId][location?.name]) {
+        updated[jobId][location?.name] = []
+      }
+      
+      const locationAttrs = updated[jobId][location?.name] || []
+      const existingIndex = locationAttrs.findIndex(attr => attr.id === attributeId)
+      
+      if (existingIndex >= 0) {
+        locationAttrs[existingIndex] = {
+          ...locationAttrs[existingIndex],
+          id: attributeId,
+          name: attribute?.name || "",
+          qaStatus: status?.name || "",
+          qaNotes: notes || "",
+          locationId,
+          statusId,
+        }
+      } else {
+        locationAttrs.push({
+          id: attributeId,
+          name: attribute?.name || "",
+          qaStatus: status?.name || "",
+          qaNotes: notes || "",
+          locationId,
+          statusId,
+        })
+      }
+      
+      updated[jobId][location?.name] = locationAttrs
+      return updated
+    })
+  }
 
   const transformedJobs = useMemo(() => {
+    // Include all jobs with status "For QA" or "On-Going QA" or "Done" (for previous jobs)
     return jobs
-      .filter((job) => job.status === "For QA")
+      .filter((job) => job.status === "For QA" || job.status === "On-Going QA" || job.status === "Done")
       .map((job) => {
         const property = properties.find((p) => p.id === job.propertyId)
         const propertyLocationNames = property?.locations?.map((loc) => loc.name) || []
         
         const savedInspectorAttributes = inspectorChecklists[job.id] || {}
         const savedTechnicianAttributes = technicianChecklists[job.id] || {}
+        const savedQAAttributes = qaChecklists[job.id] || {}
+        const localQAAttributes = localQAChecklists[job.id] || {}
+        
+        // Merge saved QA attributes with local changes (local takes precedence)
+        const mergedQAAttributes = { ...savedQAAttributes }
+        Object.keys(localQAAttributes).forEach((locationName) => {
+          if (!mergedQAAttributes[locationName]) {
+            mergedQAAttributes[locationName] = []
+          }
+          const localAttrs = localQAAttributes[locationName] || []
+          const savedAttrs = savedQAAttributes[locationName] || []
+          
+          // Merge local and saved attributes (local takes precedence)
+          const merged = [...savedAttrs]
+          localAttrs.forEach((localAttr) => {
+            const existingIndex = merged.findIndex(attr => attr.id === localAttr.id)
+            if (existingIndex >= 0) {
+              merged[existingIndex] = { ...merged[existingIndex], ...localAttr }
+            } else {
+              merged.push(localAttr)
+            }
+          })
+          mergedQAAttributes[locationName] = merged
+        })
         
         return {
           ...job,
@@ -732,15 +1088,144 @@ export function QAPage() {
           },
           inspectorAttributes: savedInspectorAttributes,
           technicianAttributes: savedTechnicianAttributes,
+          qaAttributes: mergedQAAttributes,
         }
       })
-  }, [jobs, properties, inspectorChecklists, technicianChecklists])
+  }, [jobs, properties, inspectorChecklists, technicianChecklists, qaChecklists, localQAChecklists])
 
+  // Filter jobs by status for each tab
   const availableJobs = useMemo(() => {
-    return transformedJobs
+    // Available Jobs: Show all jobs with status "For QA" regardless of assigned QA
+    return transformedJobs.filter((job) => job.status === "For QA")
   }, [transformedJobs])
 
-  const renderJobs = (jobsList) => {
+  const activeJobs = useMemo(() => {
+    // Active Jobs: Show jobs with status "On-Going QA" assigned to the current QA user
+    return transformedJobs.filter((job) => 
+      job.status === "On-Going QA" && job.qaId === currentQAId
+    )
+  }, [transformedJobs, currentQAId])
+
+  const previousJobs = useMemo(() => {
+    // Previous Jobs: Show completed jobs (status "Done") assigned to the current QA user
+    return transformedJobs.filter((job) => 
+      job.status === "Done" && job.qaId === currentQAId
+    )
+  }, [transformedJobs, currentQAId])
+
+  const handleStartJob = async (jobId) => {
+    try {
+      setIsStartingJob(true)
+      // Find the job to get its current data
+      const job = transformedJobs.find((j) => j.id === jobId)
+      if (!job) return
+
+      // Update job: assign current QA user and set status to "On-Going QA"
+      const result = await updateJob(jobId, {
+        jobTypeId: job.jobTypeId,
+        date: job.date,
+        propertyId: job.propertyId,
+        inspectorId: job.inspectorId || null,
+        technicianId: job.technicianId || null,
+        qaId: currentQAId, // Assign current QA user
+        status: "On-Going QA",
+        inspectedDate: job.inspectedDate || null,
+        fixDate: job.fixDate || null,
+      })
+
+      if (result.success) {
+        // Refetch jobs to update the UI
+        await refetch()
+      }
+    } catch (error) {
+      console.error("Error starting job:", error)
+    } finally {
+      setIsStartingJob(false)
+    }
+  }
+
+  const handleMarkDone = async (jobId) => {
+    try {
+      setIsMarkingDone(true)
+      // Find the job to get its current data
+      const job = transformedJobs.find((j) => j.id === jobId)
+      if (!job) return
+
+      // Get all QA checklist entries for this job from local state
+      const jobQAChecklists = localQAChecklists[jobId] || {}
+      const checklistEntries = []
+
+      // Collect all QA checklist entries
+      Object.keys(jobQAChecklists).forEach((locationName) => {
+        const attributes = jobQAChecklists[locationName] || []
+        attributes.forEach((attr) => {
+          if (attr.locationId && attr.id && (attr.statusId || attr.qaNotes)) {
+            checklistEntries.push({
+              job_id: jobId,
+              location_id: attr.locationId,
+              attribute_id: attr.id,
+              status_id: attr.statusId || null,
+              notes: attr.qaNotes || null,
+            })
+          }
+        })
+      })
+
+      // Insert all QA checklist entries at once
+      if (checklistEntries.length > 0) {
+        const { error: insertError } = await supabase
+          .from("qa_checklists")
+          .upsert(checklistEntries, {
+            onConflict: "job_id,location_id,attribute_id",
+          })
+
+        if (insertError) {
+          throw insertError
+        }
+      }
+
+      // Update job status to "Done"
+      const result = await updateJob(jobId, {
+        jobTypeId: job.jobTypeId,
+        date: job.date,
+        propertyId: job.propertyId,
+        inspectorId: job.inspectorId || null,
+        technicianId: job.technicianId || null,
+        qaId: job.qaId || currentQAId,
+        status: "Done",
+        inspectedDate: job.inspectedDate || null,
+        fixDate: job.fixDate || null,
+      })
+
+      if (result.success) {
+        // Clear local QA checklists for this job
+        setLocalQAChecklists((prev) => {
+          const updated = { ...prev }
+          delete updated[jobId]
+          return updated
+        })
+
+        // Refetch jobs to update the UI
+        await refetch()
+        toast({
+          title: "Success",
+          description: "Job has been marked as Done and QA checklist has been saved.",
+          variant: "success",
+        })
+      }
+    } catch (error) {
+      console.error("Error marking job as done:", error)
+      toast({
+        title: "Error",
+        description: "Failed to mark job as Done. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsMarkingDone(false)
+    }
+  }
+
+  const renderJobs = (jobsList, showStartButton = false) => {
     if (loading) {
       return (
         <Card>
@@ -775,6 +1260,15 @@ export function QAPage() {
               job={job} 
               inspectorAttributes={job.inspectorAttributes}
               technicianAttributes={job.technicianAttributes}
+              qaAttributes={job.qaAttributes}
+              qaStatuses={qaStatuses}
+              propertyLocations={propertyLocations}
+              onStartJob={handleStartJob}
+              showStartJobButton={showStartButton}
+              isStartingJob={isStartingJob}
+              onUpdateQAChecklist={handleUpdateQAChecklist}
+              onMarkDone={handleMarkDone}
+              isMarkingDone={isMarkingDone}
             />
           </motion.div>
         ))}
@@ -807,11 +1301,29 @@ export function QAPage() {
                 {availableJobs.length}
               </span>
             </TabsTrigger>
+            <TabsTrigger 
+              value="active"
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all whitespace-nowrap"
+            >
+              <span>Active</span>
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {activeJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="previous"
+              className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all whitespace-nowrap"
+            >
+              <span>Previous</span>
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {previousJobs.length}
+              </span>
+            </TabsTrigger>
           </TabsList>
         </div>
         
         <div className="hidden md:block">
-          <TabsList className="grid w-full grid-cols-1 h-10 p-1 bg-muted/50 rounded-md">
+          <TabsList className="grid w-full grid-cols-3 h-10 p-1 bg-muted/50 rounded-md">
             <TabsTrigger 
               value="available"
               className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
@@ -821,11 +1333,35 @@ export function QAPage() {
                 {availableJobs.length}
               </span>
             </TabsTrigger>
+            <TabsTrigger 
+              value="active"
+              className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
+            >
+              Active Jobs
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {activeJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="previous"
+              className="px-3 py-1.5 text-sm font-medium rounded-sm data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground transition-all"
+            >
+              Previous Jobs
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                {previousJobs.length}
+              </span>
+            </TabsTrigger>
           </TabsList>
         </div>
         
         <TabsContent value="available" className="mt-4 md:mt-6">
-          {renderJobs(availableJobs)}
+          {renderJobs(availableJobs, true)}
+        </TabsContent>
+        <TabsContent value="active" className="mt-4 md:mt-6">
+          {renderJobs(activeJobs, false)}
+        </TabsContent>
+        <TabsContent value="previous" className="mt-4 md:mt-6">
+          {renderJobs(previousJobs, false)}
         </TabsContent>
       </Tabs>
     </div>
