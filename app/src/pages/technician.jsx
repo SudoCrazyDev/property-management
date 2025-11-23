@@ -50,9 +50,12 @@ function FileUploadArea({ files, onFilesChange, attributeId, uploadStatuses = {}
   
   const handleFileSelect = (e) => {
     const newFiles = Array.from(e.target.files)
+    
     if (newFiles.length > 0) {
       onFilesChange([...files, ...newFiles])
     }
+    
+    // Reset input so same file can be selected again
     if (e.target) {
       e.target.value = ""
     }
@@ -256,10 +259,39 @@ function AttributeCard({ attribute, locationName, onUpdate, inspectorChecklist, 
   const [fileUploadStatuses, setFileUploadStatuses] = useState({})
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const isAddingFilesRef = useRef(false)
   const { isOnline = true } = useOnlineStatus() || {}
   
   const inspectorStatus = inspectorChecklist?.status || ""
   const inspectorImages = inspectorChecklist?.files || []
+
+  // Sync files when technicianChecklist changes (but only on initial load)
+  // Don't sync if user is actively adding files
+  useEffect(() => {
+    if (isAddingFilesRef.current) {
+      return
+    }
+    
+    if (technicianChecklist?.files) {
+      const currentFilesCount = files.length
+      const checklistFilesCount = technicianChecklist.files.length
+      
+      // Only sync if checklist has more files (from database) or if local is empty
+      if (currentFilesCount === 0 || (checklistFilesCount > currentFilesCount && checklistFilesCount > 0)) {
+        const filesEqual = JSON.stringify(technicianChecklist.files) === JSON.stringify(files)
+        if (!filesEqual) {
+          setFiles(technicianChecklist.files)
+        }
+      }
+    }
+  }, [technicianChecklist?.files]) // Note: files dependency removed to avoid infinite loop
+
+  // Sync status when technicianChecklist changes
+  useEffect(() => {
+    if (technicianChecklist?.status !== undefined) {
+      setStatus(technicianChecklist.status)
+    }
+  }, [technicianChecklist?.status])
 
   const handleImageClick = (index) => {
     setSelectedImageIndex(index)
@@ -288,32 +320,75 @@ function AttributeCard({ attribute, locationName, onUpdate, inspectorChecklist, 
   }
 
   const handleFilesChange = async (newFiles) => {
-    const processedFiles = await Promise.all(
-      newFiles.map(async (file) => {
-        if (file instanceof File) {
-          try {
-            const fileId = await storeFileOffline(jobId, attribute.id, file)
-            return {
-              ...file,
-              offlineId: fileId,
-              uploadStatus: "pending",
-              uploaded: false,
-            }
-          } catch (error) {
-            console.error("Error storing file offline:", error)
-            return file
+    // Separate existing files (already processed) from new files (File instances)
+    const existingFiles = []
+    const filesToProcess = []
+    
+    newFiles.forEach(file => {
+      // If it's a string, it's already uploaded
+      if (typeof file === "string") {
+        existingFiles.push(file)
+      }
+      // If it has offlineId, it's already processed
+      else if (file && file.offlineId) {
+        existingFiles.push(file)
+      }
+      // If it's a File instance without offlineId, it needs processing
+      else if (file instanceof File) {
+        filesToProcess.push(file)
+      }
+      // Otherwise, keep it as-is (might be an object with other properties)
+      else {
+        existingFiles.push(file)
+      }
+    })
+    
+    // Only process new File instances
+    const processedNewFiles = await Promise.all(
+      filesToProcess.map(async (file) => {
+        try {
+          const fileId = await storeFileOffline(jobId, attribute.id, file)
+          
+          // Create a file-like object that preserves File properties
+          // We need to explicitly preserve File properties as spreading doesn't work well with File objects
+          const processedFile = {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+            offlineId: fileId,
+            uploadStatus: "pending",
+            uploaded: false,
+            // Keep reference to original File for potential future use
+            _file: file,
           }
+          
+          return processedFile
+        } catch (error) {
+          console.error("Error storing file offline:", error)
+          return file
         }
-        return file
       })
     )
 
-    setFiles(processedFiles)
-    onUpdate({
+    // Combine existing files with newly processed files
+    const allFiles = [...existingFiles, ...processedNewFiles]
+
+    // Mark that we're adding files to prevent useEffect from overwriting
+    isAddingFilesRef.current = true
+    setFiles(allFiles)
+    
+    const updatedAttribute = {
       ...attribute,
       technicianStatus: status,
-      technicianFiles: processedFiles,
-    })
+      technicianFiles: allFiles,
+    }
+    onUpdate(updatedAttribute)
+    
+    // Reset the flag after a brief delay to allow useEffect to work normally again
+    setTimeout(() => {
+      isAddingFilesRef.current = false
+    }, 500)
   }
 
   const getStatusIcon = (statusName) => {
@@ -572,12 +647,27 @@ function LocationSection({ locationName, inspectorAttributes, technicianAttribut
   const [isExpanded, setIsExpanded] = useState(true)
 
   const handleUpdateAttribute = (updatedAttribute) => {
+    const currentLocationAttrs = technicianAttributes[locationName] || []
+    const existingIndex = currentLocationAttrs.findIndex(
+      (attr) => attr.id === updatedAttribute.id || attr.name === updatedAttribute.name
+    )
+    
+    let updatedLocationAttrs
+    if (existingIndex >= 0) {
+      // Update existing attribute
+      updatedLocationAttrs = currentLocationAttrs.map((attr, idx) =>
+        idx === existingIndex ? updatedAttribute : attr
+      )
+    } else {
+      // Add new attribute if it doesn't exist
+      updatedLocationAttrs = [...currentLocationAttrs, updatedAttribute]
+    }
+    
     const updatedTechnicianAttributes = {
       ...technicianAttributes,
-      [locationName]: technicianAttributes[locationName]?.map((attr) =>
-        attr.id === updatedAttribute.id ? updatedAttribute : attr
-      ) || [],
+      [locationName]: updatedLocationAttrs,
     }
+    
     onUpdate(updatedTechnicianAttributes)
   }
 
@@ -660,18 +750,26 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
   const [isExpanded, setIsExpanded] = useState(false)
   const [isStartingJob, setIsStartingJob] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [currentJob, setCurrentJob] = useState(job)
   const { isOnline = true } = useOnlineStatus() || {}
   const { saveDraft, deleteDraft } = useDraft(job.id, job)
 
+  // Keep currentJob in sync with job prop
+  useEffect(() => {
+    setCurrentJob(job)
+  }, [job])
+
   const handleLocationUpdate = (technicianAttributes) => {
     const updatedAttributes = {
-      ...job.technicianAttributes,
+      ...currentJob.technicianAttributes,
       ...technicianAttributes,
     }
-    onUpdate({
-      ...job,
+    const updatedJob = {
+      ...currentJob,
       technicianAttributes: updatedAttributes,
-    })
+    }
+    setCurrentJob(updatedJob)
+    onUpdate(updatedJob)
   }
 
   const handleStartJob = async () => {
@@ -691,10 +789,14 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
   const uploadAllFiles = async () => {
     return new Promise(async (resolve, reject) => {
       try {
+        // Use currentJob to ensure we have the latest state
+        const jobToUse = currentJob
+        
         const filesByAttribute = new Map() // key: `${locationName}|${attributeName}`
         
-        Object.keys(job.technicianAttributes || {}).forEach((locationName) => {
-          const attributes = job.technicianAttributes[locationName] || []
+        Object.keys(jobToUse.technicianAttributes || {}).forEach((locationName) => {
+          const attributes = jobToUse.technicianAttributes[locationName] || []
+          
           attributes.forEach((attribute) => {
             const key = `${locationName}|${attribute.name}`
             filesByAttribute.set(key, {
@@ -707,18 +809,37 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
             
             // Process files
             const techFiles = attribute.technicianFiles || []
-            techFiles.forEach((file) => {
+            
+            techFiles.forEach((file, index) => {
+              // Check if it's already a string (uploaded path) - highest priority
               if (typeof file === "string") {
                 filesByAttribute.get(key).files.push({
                   path: file,
                   uploaded: true,
                 })
-              } else if (file && file.offlineId && !file.uploaded) {
+              }
+              // Check if file has offlineId and is not uploaded (needs upload)
+              else if (file && file.offlineId && !file.uploaded) {
                 filesByAttribute.get(key).files.push({
-                  file: file instanceof File ? file : null,
+                  file: file instanceof File ? file : null, // Will retrieve from IndexedDB if not File instance
                   fileId: file.offlineId,
                   uploaded: false,
                 })
+              }
+              // Handle File instances that might not have offlineId yet (shouldn't happen, but handle it)
+              else if (file instanceof File) {
+                // Store offline first, then upload
+                storeFileOffline(currentJob.id, attribute.id, file).then((fileId) => {
+                  filesByAttribute.get(key).files.push({
+                    file: file,
+                    fileId: fileId,
+                    uploaded: false,
+                  })
+                }).catch((error) => {
+                  console.error("Error storing file offline:", error)
+                })
+              } else {
+                console.warn(`Skipping file - unknown format:`, file)
               }
             })
           })
@@ -735,52 +856,98 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
               }
               uploadedPaths.get(key).push(fileItem.path)
             } else {
-              const uploadPromise = new Promise(async (fileResolve, fileReject) => {
-                try {
-                  // Retrieve file from IndexedDB if needed
-                  let fileToUpload = fileItem.file
-                  if (fileItem.fileId && !fileToUpload) {
-                    const { retrieveFileOffline } = await import("@/lib/draft-storage")
-                    const retrievedFile = await retrieveFileOffline(fileItem.fileId)
-                    if (retrievedFile) {
-                      fileToUpload = retrievedFile
-                    }
-                  }
-
-                  if (!fileToUpload) {
-                    throw new Error(`File not found for upload: ${fileItem.fileId}`)
-                  }
-
-                  // Upload file with technician-checklists folder prefix
-                  const uploadedPaths_array = await uploadFiles([fileToUpload], "technician-checklists")
-                  if (uploadedPaths_array && uploadedPaths_array.length > 0) {
-                    const uploadedPath = uploadedPaths_array[0]
+              // Need to upload - use upload queue
+              const uploadPromise = new Promise((fileResolve, fileReject) => {
+                uploadQueue.enqueue(
+                  {
+                    file: fileItem.file,
+                    fileId: fileItem.fileId,
+                    jobId: currentJob.id,
+                    attributeId: attrData.attributeId,
+                    folderPrefix: "technician-checklists", // Add folder prefix for upload queue
+                  },
+                  () => {}, // Progress callback
+                  async (uploadedPath) => {
+                    // Complete callback
                     if (!uploadedPaths.has(key)) {
                       uploadedPaths.set(key, [])
                     }
                     uploadedPaths.get(key).push(uploadedPath)
-                    
-                    // Delete from IndexedDB after successful upload
-                    if (fileItem.fileId) {
-                      try {
-                        await deleteFileOffline(fileItem.fileId)
-                      } catch (error) {
-                        console.error("Error deleting file from IndexedDB after upload:", error)
-                      }
-                    }
-                    
                     fileResolve(uploadedPath)
-                  } else {
-                    throw new Error("Upload returned no paths")
+                  },
+                  (error) => {
+                    // Error callback
+                    console.error("Error uploading file:", error)
+                    fileReject(error)
                   }
-                } catch (error) {
-                  console.error("Error uploading file:", error)
-                  fileReject(error)
-                }
+                )
               })
               uploadPromises.push(uploadPromise)
             }
           })
+        })
+        
+        // Re-process to catch any files we might have missed and create upload promises for them
+        filesByAttribute.forEach((attrData, key) => {
+          const [locationName, attributeName] = key.split("|")
+          const locationAttrs = currentJob.technicianAttributes[locationName] || []
+          const attr = locationAttrs.find(a => a.name === attributeName)
+          
+          if (attr && attr.technicianFiles && attr.technicianFiles.length > 0) {
+            attr.technicianFiles.forEach((file) => {
+              // Check if this file is already processed
+              const alreadyProcessed = attrData.files.some(f => 
+                (f.uploaded && typeof file === "string" && f.path === file) ||
+                (!f.uploaded && file?.offlineId && f.fileId === file.offlineId)
+              )
+              
+              if (!alreadyProcessed) {
+                if (typeof file === "string") {
+                  // Already uploaded
+                  attrData.files.push({ path: file, uploaded: true })
+                  if (!uploadedPaths.has(key)) {
+                    uploadedPaths.set(key, [])
+                  }
+                  uploadedPaths.get(key).push(file)
+                } else if (file && file.offlineId && !file.uploaded) {
+                  // Needs upload
+                  attrData.files.push({
+                    file: file instanceof File ? file : null,
+                    fileId: file.offlineId,
+                    uploaded: false,
+                  })
+                  
+                  // Create upload promise for this file using upload queue
+                  const uploadPromise = new Promise((fileResolve, fileReject) => {
+                    uploadQueue.enqueue(
+                      {
+                        file: file instanceof File ? file : null,
+                        fileId: file.offlineId,
+                        jobId: currentJob.id,
+                        attributeId: attrData.attributeId,
+                        folderPrefix: "technician-checklists", // Add folder prefix for upload queue
+                      },
+                      () => {}, // Progress callback
+                      async (uploadedPath) => {
+                        // Complete callback
+                        if (!uploadedPaths.has(key)) {
+                          uploadedPaths.set(key, [])
+                        }
+                        uploadedPaths.get(key).push(uploadedPath)
+                        fileResolve(uploadedPath)
+                      },
+                      (error) => {
+                        // Error callback
+                        console.error("Error uploading file:", error)
+                        fileReject(error)
+                      }
+                    )
+                  })
+                  uploadPromises.push(uploadPromise)
+                }
+              }
+            })
+          }
         })
         
         if (uploadPromises.length === 0) {
@@ -794,6 +961,7 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
             resolve({ filesByAttribute, uploadedPaths })
           })
           .catch((error) => {
+            console.error("Error in upload promises:", error)
             reject(error)
           })
       } catch (error) {
@@ -831,12 +999,13 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
         const imagePaths = uploadedPaths.get(key) || []
         
         if (!locationId || !attributeId) {
-          console.warn(`Missing ID for location: ${attrData.locationName} or attribute: ${attrData.attributeName}`)
+          console.warn(`Missing ID for location: ${attrData.locationName} (found: ${locationId}) or attribute: ${attrData.attributeName} (found: ${attributeId})`)
           return
         }
         
+        // Create entry for all attributes in filesByAttribute (they have technician data)
         checklistEntries.push({
-          job_id: job.id,
+          job_id: currentJob.id,
           location_id: locationId,
           attribute_id: attributeId,
           status_id: statusId,
@@ -846,8 +1015,27 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
       })
       
       if (checklistEntries.length === 0) {
-        console.log("No checklist entries to insert")
-        return
+        // Create entries even if no images, as long as there's a status or any data in filesByAttribute
+        filesByAttribute.forEach((attrData, key) => {
+          const locationId = locationIdMap.get(attrData.locationName)
+          const attributeId = attributeIdMap.get(attrData.attributeName)
+          const statusId = attrData.status ? statusIdMap.get(attrData.status) : null
+          
+          if (locationId && attributeId && (statusId || attrData.files.length > 0)) {
+            checklistEntries.push({
+              job_id: currentJob.id,
+              location_id: locationId,
+              attribute_id: attributeId,
+              status_id: statusId,
+              images: uploadedPaths.get(key) || [],
+              notes: null,
+            })
+          }
+        })
+        
+        if (checklistEntries.length === 0) {
+          return
+        }
       }
       
       const { data, error } = await supabase
@@ -861,8 +1049,6 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
         console.error("Error inserting checklist entries:", error)
         throw error
       }
-      
-      console.log(`Successfully inserted ${checklistEntries.length} checklist entries:`, data)
     } catch (error) {
       console.error("Error in insertTechnicianChecklists:", error)
       throw error
@@ -900,6 +1086,11 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
       }
       
       const uploadedData = await uploadAllFiles()
+      
+      if (!uploadedData || !uploadedData.filesByAttribute) {
+        throw new Error("No files data returned from uploadAllFiles")
+      }
+      
       await insertTechnicianChecklists(uploadedData)
       
       if (onUpdateJobStatus) {
@@ -915,10 +1106,12 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
       
       deleteDraft()
       
-      onUpdate({
-        ...job,
+      const updatedJob = {
+        ...currentJob,
         status: "For QA",
-      })
+      }
+      setCurrentJob(updatedJob)
+      onUpdate(updatedJob)
       
       setIsUploading(false)
     } catch (error) {
@@ -926,10 +1119,12 @@ function JobCard({ job, onUpdate, onStartJob, technicianStatuses, propertyLocati
       setIsUploading(false)
       alert(`Error sending to QA: ${error.message}. Your work has been saved as a draft.`)
       saveDraft()
-      onUpdate({
-        ...job,
+      const draftJob = {
+        ...currentJob,
         status: "Draft",
-      })
+      }
+      setCurrentJob(draftJob)
+      onUpdate(draftJob)
     }
   }
 

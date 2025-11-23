@@ -54,6 +54,7 @@ class UploadQueue {
       fileId: fileItem.fileId, // Offline file ID
       jobId: fileItem.jobId,
       attributeId: fileItem.attributeId,
+      folderPrefix: fileItem.folderPrefix || "", // Folder prefix for upload path
       retries: 0,
       onProgress,
       onComplete,
@@ -109,8 +110,9 @@ class UploadQueue {
           }
         }
         
-        // Upload the file
-        const paths = await uploadFiles([fileToUpload], "inspector-checklists")
+        // Upload the file with the specified folder prefix
+        const folderPrefix = item.folderPrefix || "inspector-checklists" // Default to inspector-checklists for backward compatibility
+        const paths = await uploadFiles([fileToUpload], folderPrefix)
         
         if (paths && paths.length > 0) {
           item.status = "completed"
