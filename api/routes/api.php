@@ -6,6 +6,7 @@ use App\Http\Controllers\InspectorFormController;
 use App\Http\Controllers\PublicInspectorFormController;
 use App\Http\Controllers\AdminPunchlistController;
 use App\Http\Controllers\PublicAdminPunchlistController;
+use App\Http\Controllers\StorageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,4 +41,7 @@ Route::prefix('public/admin-punchlists')->group(function () {
     Route::get('/{slug}', [PublicAdminPunchlistController::class, 'show']);
     Route::post('/{slug}/rooms/{roomId}/rows/{rowId}/proof-of-completion', [PublicAdminPunchlistController::class, 'uploadProofOfCompletion']);
 });
+
+// Storage Routes - Serve files directly from storage (no symlink needed)
+Route::get('/storage/{path}', [StorageController::class, 'serve'])->where('path', '.*');
 

@@ -35,6 +35,7 @@ class InspectorFormVideo extends Model
     /**
      * Get the file URL (always returns full URL).
      * If file_path is already a URL, return it. Otherwise, convert path to URL.
+     * Uses direct storage route instead of symlink.
      */
     public function getFileUrlAttribute(): string
     {
@@ -44,18 +45,11 @@ class InspectorFormVideo extends Model
             return $this->file_path;
         }
         
-        // Convert storage path to full URL
-        // Storage::url() returns a URL like /storage/path, so we need to prepend APP_URL
-        $storageUrl = \Storage::disk('public')->url($this->file_path);
-        
-        // If Storage::url() already returns a full URL, use it as is
-        if (str_starts_with($storageUrl, 'http://') || str_starts_with($storageUrl, 'https://')) {
-            return $storageUrl;
-        }
-        
-        // Otherwise, prepend APP_URL to make it a full URL
+        // Generate URL using direct storage route: /api/storage/{path}
         $backendUrl = env('APP_URL', 'http://localhost:8000');
-        return rtrim($backendUrl, '/') . $storageUrl;
+        $apiPath = '/api/storage/' . ltrim($this->file_path, '/');
+        
+        return rtrim($backendUrl, '/') . $apiPath;
     }
 }
 

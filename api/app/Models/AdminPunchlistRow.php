@@ -37,6 +37,7 @@ class AdminPunchlistRow extends Model
     /**
      * Get the full URL for the image file.
      * If image_path is already a URL, return it. Otherwise, convert path to URL.
+     * Uses direct storage route instead of symlink.
      */
     protected function imageUrl(): Attribute
     {
@@ -53,17 +54,11 @@ class AdminPunchlistRow extends Model
                     return $imagePath;
                 }
                 
-                // Convert storage path to full URL
-                $storageUrl = Storage::disk('public')->url($imagePath);
-                
-                // If Storage::url() already returns a full URL, use it as is
-                if (str_starts_with($storageUrl, 'http://') || str_starts_with($storageUrl, 'https://')) {
-                    return $storageUrl;
-                }
-                
-                // Otherwise, prepend APP_URL to make it a full URL
+                // Generate URL using direct storage route: /api/storage/{path}
                 $backendUrl = env('APP_URL', 'http://localhost:8000');
-                return rtrim($backendUrl, '/') . $storageUrl;
+                $apiPath = '/api/storage/' . ltrim($imagePath, '/');
+                
+                return rtrim($backendUrl, '/') . $apiPath;
             }
         );
     }
@@ -71,6 +66,7 @@ class AdminPunchlistRow extends Model
     /**
      * Get the full URL for the proof of completion image file.
      * If proof_of_completion_image_path is already a URL, return it. Otherwise, convert path to URL.
+     * Uses direct storage route instead of symlink.
      */
     protected function proofOfCompletionImageUrl(): Attribute
     {
@@ -87,17 +83,11 @@ class AdminPunchlistRow extends Model
                     return $proofPath;
                 }
                 
-                // Convert storage path to full URL
-                $storageUrl = Storage::disk('public')->url($proofPath);
-                
-                // If Storage::url() already returns a full URL, use it as is
-                if (str_starts_with($storageUrl, 'http://') || str_starts_with($storageUrl, 'https://')) {
-                    return $storageUrl;
-                }
-                
-                // Otherwise, prepend APP_URL to make it a full URL
+                // Generate URL using direct storage route: /api/storage/{path}
                 $backendUrl = env('APP_URL', 'http://localhost:8000');
-                return rtrim($backendUrl, '/') . $storageUrl;
+                $apiPath = '/api/storage/' . ltrim($proofPath, '/');
+                
+                return rtrim($backendUrl, '/') . $apiPath;
             }
         );
     }
