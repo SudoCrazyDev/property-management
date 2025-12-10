@@ -42,6 +42,8 @@ export function useProperties() {
         state: property.state,
         zipCode: property.zip_code,
         county: property.county,
+        latitude: property.latitude,
+        longitude: property.longitude,
         status: property.status,
         gallery: property.gallery || [],
         locations: property.locations?.map((assignment) => ({
@@ -85,6 +87,8 @@ export function useProperties() {
             state: propertyData.state,
             zip_code: propertyData.zipCode,
             county: propertyData.county,
+            latitude: propertyData.latitude || null,
+            longitude: propertyData.longitude || null,
             status: propertyData.status,
             gallery: galleryPaths,
           },
@@ -161,6 +165,8 @@ export function useProperties() {
           state: propertyData.state,
           zip_code: propertyData.zipCode,
           county: propertyData.county,
+          latitude: propertyData.latitude || null,
+          longitude: propertyData.longitude || null,
           status: propertyData.status,
           gallery: updatedGallery,
         })

@@ -22,7 +22,7 @@ export function useJobs() {
         .select(`
           *,
           jobType:job_types(id, name),
-          property:properties(id, name, street_address, unit_number, city, state, zip_code)
+          property:properties(id, name, street_address, unit_number, city, state, zip_code, latitude, longitude)
         `)
         .order("created_at", { ascending: false })
 
@@ -65,6 +65,12 @@ export function useJobs() {
           id: job.property?.id,
           name: job.property?.name || "",
           address: job.property?.street_address || "",
+          city: job.property?.city || "",
+          state: job.property?.state || "",
+          zipCode: job.property?.zip_code || "",
+          unitNumber: job.property?.unit_number || "",
+          latitude: job.property?.latitude,
+          longitude: job.property?.longitude,
           fullAddress: `${job.property?.street_address || ""}${job.property?.unit_number ? `, ${job.property.unit_number}` : ""}, ${job.property?.city || ""}, ${job.property?.state || ""} ${job.property?.zip_code || ""}`,
         },
         propertyId: job.property_id,

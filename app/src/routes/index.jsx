@@ -9,6 +9,7 @@ import { SettingsPage } from "@/pages/settings"
 import { InspectorPage } from "@/pages/inspector"
 import { TechnicianPage } from "@/pages/technician"
 import { QAPage } from "@/pages/qa"
+import { MapsPage } from "@/pages/maps"
 import { PrivateLayout } from "@/components/layout/private-layout"
 import { isAuthenticated } from "@/lib/auth"
 
@@ -72,6 +73,10 @@ export const router = createBrowserRouter([
       {
         path: "qa",
         element: <QAPage />,
+      },
+      {
+        path: "maps",
+        element: <MapsPage />,
       },
     ],
   },

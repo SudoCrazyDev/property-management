@@ -85,7 +85,7 @@ export function MultiSelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] p-1 bg-white"
+          className="w-[var(--radix-popover-trigger-width)] p-1 bg-white z-[9999]"
           align="start"
           sideOffset={4}
         >

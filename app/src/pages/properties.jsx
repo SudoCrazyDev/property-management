@@ -39,8 +39,8 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { motion } from "motion/react"
-import { STATES, getCountiesForState, getCitiesForCounty } from "@/lib/locations"
 import { ImageGallery } from "@/components/ui/image-gallery"
+import { LocationPicker } from "@/components/ui/location-picker"
 import { useProperties } from "@/hooks/use-properties"
 import { usePropertyTypes } from "@/hooks/use-property-types"
 import { usePropertyLocations } from "@/hooks/use-property-locations"
@@ -57,6 +57,8 @@ const propertySchema = z.object({
   state: z.string().min(1, "State is required"),
   zipCode: z.string().min(1, "Zip code is required"),
   county: z.string().min(1, "County is required"),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
   status: z.enum(["Active", "Inactive", "Maintenance"]),
   locationIds: z.array(z.string()).optional().default([]),
   gallery: z.array(z.any()).optional().default([]),
@@ -91,19 +93,13 @@ export function PropertiesPage() {
       state: "",
       zipCode: "",
       county: "",
+      latitude: undefined,
+      longitude: undefined,
       status: "Active",
       locationIds: [],
       gallery: [],
     },
   })
-
-  const selectedState = form.watch("state")
-  const selectedCounty = form.watch("county")
-  
-  const availableCounties = selectedState ? getCountiesForState(selectedState) : []
-  const availableCities = selectedState && selectedCounty 
-    ? getCitiesForCounty(selectedState, selectedCounty) 
-    : []
 
   const filteredProperties = useMemo(() => {
     return properties.filter((property) => {
@@ -143,6 +139,8 @@ export function PropertiesPage() {
         state: property.state,
         zipCode: property.zipCode,
         county: property.county,
+        latitude: property.latitude,
+        longitude: property.longitude,
         status: property.status,
         locationIds: property.locations?.map((loc) => loc.id) || [],
         gallery: property.gallery || [],
@@ -157,6 +155,8 @@ export function PropertiesPage() {
         state: "",
         zipCode: "",
         county: "",
+        latitude: undefined,
+        longitude: undefined,
         status: "Active",
         locationIds: [],
         gallery: [],
@@ -191,6 +191,8 @@ export function PropertiesPage() {
         state: data.state,
         zipCode: data.zipCode,
         county: data.county,
+        latitude: data.latitude,
+        longitude: data.longitude,
         status: data.status,
         locationIds: data.locationIds || [],
       }
@@ -397,127 +399,184 @@ export function PropertiesPage() {
                   </FormMessage>
                 </FormItem>
                 <FormItem>
-                  <FormLabel htmlFor="streetAddress">Street Address</FormLabel>
+                  <FormLabel>Property Location</FormLabel>
                   <FormControl>
-                    <Input
-                      id="streetAddress"
-                      placeholder="123 Main Street"
-                      {...form.register("streetAddress")}
+                    <LocationPicker
+                      value={{
+                        latitude: form.watch("latitude"),
+                        longitude: form.watch("longitude"),
+                      }}
+                      onChange={(coords) => {
+                        if (coords.latitude && coords.longitude) {
+                          form.setValue("latitude", coords.latitude)
+                          form.setValue("longitude", coords.longitude)
+                          form.trigger("latitude")
+                          form.trigger("longitude")
+                        }
+                      }}
+                      onAddressChange={(addressData) => {
+                        // Auto-populate address fields from reverse geocoding
+                        if (addressData.streetAddress) {
+                          form.setValue("streetAddress", addressData.streetAddress)
+                        }
+                        if (addressData.city) {
+                          form.setValue("city", addressData.city)
+                        }
+                        if (addressData.state) {
+                          form.setValue("state", addressData.state)
+                        }
+                        if (addressData.zipCode) {
+                          form.setValue("zipCode", addressData.zipCode)
+                        }
+                        if (addressData.county) {
+                          form.setValue("county", addressData.county)
+                        }
+                      }}
+                      height="400px"
                     />
                   </FormControl>
                   <FormMessage>
-                    {form.formState.errors.streetAddress?.message}
+                    {form.formState.errors.latitude?.message || form.formState.errors.longitude?.message}
                   </FormMessage>
                 </FormItem>
-                <FormItem>
-                  <FormLabel htmlFor="unitNumber">Unit Number (Optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      id="unitNumber"
-                      placeholder="Unit A, Apt 2B, etc."
-                      {...form.register("unitNumber")}
-                    />
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.unitNumber?.message}
-                  </FormMessage>
-                </FormItem>
-                <FormItem>
-                  <FormLabel htmlFor="state">State</FormLabel>
-                  <FormControl>
-                    <Select
-                      value={form.watch("state")}
-                      onValueChange={(value) => {
-                        form.setValue("state", value)
-                        form.setValue("county", "") // Reset county when state changes
-                        form.setValue("city", "") // Reset city when state changes
-                        form.trigger("state")
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Address Details</h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        // Geocode from address fields to map
+                        const streetAddress = form.watch("streetAddress")
+                        const city = form.watch("city")
+                        const state = form.watch("state")
+                        const zipCode = form.watch("zipCode")
+                        
+                        if (!streetAddress && !city) {
+                          return
+                        }
+                        
+                        const addressQuery = [
+                          streetAddress,
+                          city,
+                          state,
+                          zipCode
+                        ].filter(Boolean).join(", ")
+                        
+                        try {
+                          const response = await fetch(
+                            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressQuery)}&limit=1`,
+                            {
+                              headers: {
+                                "User-Agent": "Property Management App"
+                              }
+                            }
+                          )
+                          
+                          if (response.ok) {
+                            const data = await response.json()
+                            if (data && data.length > 0) {
+                              const lat = parseFloat(data[0].lat)
+                              const lng = parseFloat(data[0].lon)
+                              form.setValue("latitude", lat)
+                              form.setValue("longitude", lng)
+                              form.trigger("latitude")
+                              form.trigger("longitude")
+                            }
+                          }
+                        } catch (error) {
+                          console.error("Error geocoding address:", error)
+                        }
                       }}
                     >
-                      <SelectTrigger id="state">
-                        <SelectValue placeholder="Select state" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATES.map((state) => (
-                          <SelectItem key={state.code} value={state.code}>
-                            {state.name} ({state.code})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.state?.message}
-                  </FormMessage>
-                </FormItem>
-                <FormItem>
-                  <FormLabel htmlFor="county">County</FormLabel>
-                  <FormControl>
-                    <Select
-                      value={form.watch("county")}
-                      onValueChange={(value) => {
-                        form.setValue("county", value)
-                        form.setValue("city", "") // Reset city when county changes
-                        form.trigger("county")
-                      }}
-                      disabled={!selectedState || availableCounties.length === 0}
-                    >
-                      <SelectTrigger id="county">
-                        <SelectValue placeholder={selectedState ? "Select county" : "Select state first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableCounties.map((county) => (
-                          <SelectItem key={county} value={county}>
-                            {county}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.county?.message}
-                  </FormMessage>
-                </FormItem>
-                <FormItem>
-                  <FormLabel htmlFor="city">City</FormLabel>
-                  <FormControl>
-                    <Select
-                      value={form.watch("city")}
-                      onValueChange={(value) => {
-                        form.setValue("city", value)
-                        form.trigger("city")
-                      }}
-                      disabled={!selectedCounty || availableCities.length === 0}
-                    >
-                      <SelectTrigger id="city">
-                        <SelectValue placeholder={selectedCounty ? "Select city" : "Select county first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableCities.map((city) => (
-                          <SelectItem key={city} value={city}>
-                            {city}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.city?.message}
-                  </FormMessage>
-                </FormItem>
-                <FormItem>
-                  <FormLabel htmlFor="zipCode">Zip Code</FormLabel>
-                  <FormControl>
-                    <Input
-                      id="zipCode"
-                      placeholder="10001"
-                      {...form.register("zipCode")}
-                    />
-                  </FormControl>
-                  <FormMessage>
-                    {form.formState.errors.zipCode?.message}
-                  </FormMessage>
-                </FormItem>
+                      <Search className="mr-2 h-4 w-4" />
+                      Find on Map
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormItem>
+                      <FormLabel htmlFor="streetAddress">Street Address</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="streetAddress"
+                          placeholder="123 Main Street"
+                          {...form.register("streetAddress")}
+                        />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.streetAddress?.message}
+                      </FormMessage>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel htmlFor="unitNumber">Unit Number (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="unitNumber"
+                          placeholder="Unit A, Apt 2B, etc."
+                          {...form.register("unitNumber")}
+                        />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.unitNumber?.message}
+                      </FormMessage>
+                    </FormItem>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormItem>
+                      <FormLabel htmlFor="city">City</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="city"
+                          placeholder="City"
+                          {...form.register("city")}
+                        />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.city?.message}
+                      </FormMessage>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel htmlFor="state">State</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="state"
+                          placeholder="State"
+                          {...form.register("state")}
+                        />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.state?.message}
+                      </FormMessage>
+                    </FormItem>
+                    <FormItem>
+                      <FormLabel htmlFor="zipCode">Zip Code</FormLabel>
+                      <FormControl>
+                        <Input
+                          id="zipCode"
+                          placeholder="10001"
+                          {...form.register("zipCode")}
+                        />
+                      </FormControl>
+                      <FormMessage>
+                        {form.formState.errors.zipCode?.message}
+                      </FormMessage>
+                    </FormItem>
+                  </div>
+                  <FormItem>
+                    <FormLabel htmlFor="county">County</FormLabel>
+                    <FormControl>
+                      <Input
+                        id="county"
+                        placeholder="County"
+                        {...form.register("county")}
+                      />
+                    </FormControl>
+                    <FormMessage>
+                      {form.formState.errors.county?.message}
+                    </FormMessage>
+                  </FormItem>
+                </div>
                 <FormItem>
                   <FormLabel htmlFor="status">Status</FormLabel>
                   <FormControl>

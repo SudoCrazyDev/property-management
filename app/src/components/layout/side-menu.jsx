@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, UserCog, Users, Settings, LogOut, Briefcase, ClipboardCheck, Wrench, CheckSquare } from "lucide-react"
+import { LayoutDashboard, Building2, UserCog, Users, Settings, LogOut, Briefcase, ClipboardCheck, Wrench, CheckSquare, Map } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
@@ -52,6 +52,12 @@ const allMenuItems = [
     icon: CheckSquare,
     href: "/qa",
     roles: ["Admin", "QA"], // Admin and QA can see QA menu
+  },
+  {
+    title: "Mapping",
+    icon: Map,
+    href: "/maps",
+    roles: ["Admin"], // Only Admin can see Mapping
   },
   {
     title: "Settings",
