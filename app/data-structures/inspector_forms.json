@@ -1,0 +1,77 @@
+{
+  "table_name": "inspector_forms",
+  "description": "Main table for Inspector Forms",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "nullable": false,
+      "description": "Date of the form (required)"
+    },
+    {
+      "name": "uploader_id",
+      "type": "string",
+      "length": 255,
+      "nullable": false,
+      "description": "User ID/identifier who created the form (required, can be UUID, name, or any string identifier)"
+    },
+    {
+      "name": "project_address",
+      "type": "string",
+      "length": 500,
+      "nullable": false,
+      "description": "Project address (required)"
+    },
+    {
+      "name": "public_slug",
+      "type": "string",
+      "length": 255,
+      "nullable": false,
+      "unique": true,
+      "description": "Unique public URL slug for sharing"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["uploader_id"],
+      "name": "idx_inspector_forms_uploader_id"
+    },
+    {
+      "columns": ["date"],
+      "name": "idx_inspector_forms_date"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->date('date');",
+      "$table->string('uploader_id', 255);",
+      "$table->string('project_address', 500);",
+      "$table->string('public_slug', 255)->unique();",
+      "$table->timestamps();",
+      "$table->index('uploader_id');",
+      "$table->index('date');",
+      "$table->index('public_slug');"
+    ]
+  }
+}
+

@@ -1,0 +1,66 @@
+{
+  "table_name": "inspector_form_notes",
+  "description": "Notes for Inspector Forms (one-to-many relationship)",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "inspector_form_id",
+      "type": "unsignedBigInteger",
+      "nullable": false,
+      "foreign_key": {
+        "table": "inspector_forms",
+        "column": "id",
+        "on_delete": "cascade"
+      },
+      "description": "Reference to inspector form"
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "nullable": false,
+      "description": "Note content"
+    },
+    {
+      "name": "order",
+      "type": "integer",
+      "nullable": false,
+      "default": 0,
+      "description": "Order/position of the note"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["inspector_form_id"],
+      "name": "idx_inspector_form_notes_form_id"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->foreignId('inspector_form_id')->constrained('inspector_forms')->onDelete('cascade');",
+      "$table->text('note');",
+      "$table->integer('order')->default(0);",
+      "$table->timestamps();",
+      "$table->index('inspector_form_id');"
+    ]
+  }
+}
+

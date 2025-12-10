@@ -16,7 +16,7 @@ export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
     if (value && value.length > 0) {
       const initializedPreviews = value.map((item) => {
         // If it's already a preview object (has id, url, file)
-        if (item.id && item.url) {
+        if (item && item.id && item.url) {
           return item
         }
         // If it's a file object
@@ -27,6 +27,17 @@ export function ImageGallery({ value = [], onChange, maxImages = 10 }) {
             file: item,
             name: item.name,
             isNew: true,
+          }
+        }
+        // If it's an object with file_path (from API)
+        if (item && typeof item === "object" && item.file_path) {
+          const filePath = item.file_path
+          return {
+            id: item.id || filePath,
+            url: filePath, // file_path should already be a full URL from the API
+            path: filePath,
+            name: item.file_name || filePath.split("/").pop(),
+            isExisting: true,
           }
         }
         // If it's a path string (from database)

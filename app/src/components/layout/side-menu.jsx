@@ -1,4 +1,4 @@
-import { LayoutDashboard, Building2, UserCog, Users, Settings, LogOut, Briefcase, ClipboardCheck, Wrench, CheckSquare, Map } from "lucide-react"
+import { LayoutDashboard, Building2, UserCog, Users, Settings, LogOut, Briefcase, ClipboardCheck, Wrench, CheckSquare, Map, FileText, ClipboardList } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router"
 import { cn } from "@/lib/utils"
 import { motion } from "motion/react"
@@ -42,6 +42,18 @@ const allMenuItems = [
     roles: ["Admin", "Inspector"], // Admin and Inspector can see Inspector menu
   },
   {
+    title: "Inspector Form",
+    icon: FileText,
+    href: "/inspector-form",
+    roles: ["Admin", "Inspector"], // Admin and Inspector can see Inspector Form menu
+  },
+  {
+    title: "Admin Punchlist",
+    icon: ClipboardList,
+    href: "/public/create-punchlist",
+    roles: ["Admin", "Inspector"], // Admin and Inspector can see Admin Punchlist menu
+  },
+  {
     title: "Technician",
     icon: Wrench,
     href: "/technician",
@@ -75,14 +87,9 @@ export function SideMenu({ onLinkClick }) {
   // Get user role
   const userRole = user?.roles?.name || null
 
-  // Filter menu items based on user role
+  // Filter menu items - only show Inspector Form and Admin Punchlist
   const menuItems = allMenuItems.filter((item) => {
-    // Admin sees all menus
-    if (userRole === "Admin") {
-      return true
-    }
-    // Other roles only see menus that include their role
-    return item.roles.includes(userRole)
+    return item.title === "Inspector Form" || item.title === "Admin Punchlist"
   })
 
   const handleLogout = () => {

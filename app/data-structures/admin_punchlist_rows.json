@@ -1,0 +1,98 @@
+{
+  "table_name": "admin_punchlist_rows",
+  "description": "Rows within rooms for Admin Punchlist Forms (one-to-many relationship from rooms)",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "admin_punchlist_room_id",
+      "type": "unsignedBigInteger",
+      "nullable": false,
+      "foreign_key": {
+        "table": "admin_punchlist_rooms",
+        "column": "id",
+        "on_delete": "cascade"
+      },
+      "description": "Reference to admin punchlist room"
+    },
+    {
+      "name": "image_path",
+      "type": "string",
+      "length": 500,
+      "nullable": true,
+      "description": "Path to the uploaded image (one image per row, nullable)"
+    },
+    {
+      "name": "image_name",
+      "type": "string",
+      "length": 255,
+      "nullable": true,
+      "description": "Original image file name"
+    },
+    {
+      "name": "note",
+      "type": "text",
+      "nullable": true,
+      "description": "Note/description for this row"
+    },
+    {
+      "name": "proof_of_completion_image_path",
+      "type": "string",
+      "length": 500,
+      "nullable": true,
+      "description": "Path to proof of completion image (uploaded on public view)"
+    },
+    {
+      "name": "proof_of_completion_image_name",
+      "type": "string",
+      "length": 255,
+      "nullable": true,
+      "description": "Original proof of completion image file name"
+    },
+    {
+      "name": "order",
+      "type": "integer",
+      "nullable": false,
+      "default": 0,
+      "description": "Order/position of the row within the room"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["admin_punchlist_room_id"],
+      "name": "idx_admin_punchlist_rows_room_id"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->foreignId('admin_punchlist_room_id')->constrained('admin_punchlist_rooms')->onDelete('cascade');",
+      "$table->string('image_path', 500)->nullable();",
+      "$table->string('image_name', 255)->nullable();",
+      "$table->text('note')->nullable();",
+      "$table->string('proof_of_completion_image_path', 500)->nullable();",
+      "$table->string('proof_of_completion_image_name', 255)->nullable();",
+      "$table->integer('order')->default(0);",
+      "$table->timestamps();",
+      "$table->index('admin_punchlist_room_id');"
+    ]
+  }
+}
+

@@ -1,0 +1,90 @@
+{
+  "table_name": "inspector_form_images",
+  "description": "Images uploaded for Inspector Forms (one-to-many relationship)",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "inspector_form_id",
+      "type": "unsignedBigInteger",
+      "nullable": false,
+      "foreign_key": {
+        "table": "inspector_forms",
+        "column": "id",
+        "on_delete": "cascade"
+      },
+      "description": "Reference to inspector form"
+    },
+    {
+      "name": "file_path",
+      "type": "string",
+      "length": 500,
+      "nullable": false,
+      "description": "Path to the image file"
+    },
+    {
+      "name": "file_name",
+      "type": "string",
+      "length": 255,
+      "nullable": false,
+      "description": "Original file name"
+    },
+    {
+      "name": "file_size",
+      "type": "unsignedBigInteger",
+      "nullable": true,
+      "description": "File size in bytes"
+    },
+    {
+      "name": "mime_type",
+      "type": "string",
+      "length": 100,
+      "nullable": true,
+      "description": "MIME type of the image"
+    },
+    {
+      "name": "order",
+      "type": "integer",
+      "nullable": false,
+      "default": 0,
+      "description": "Order/position of the image"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["inspector_form_id"],
+      "name": "idx_inspector_form_images_form_id"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->foreignId('inspector_form_id')->constrained('inspector_forms')->onDelete('cascade');",
+      "$table->string('file_path', 500);",
+      "$table->string('file_name', 255);",
+      "$table->unsignedBigInteger('file_size')->nullable();",
+      "$table->string('mime_type', 100)->nullable();",
+      "$table->integer('order')->default(0);",
+      "$table->timestamps();",
+      "$table->index('inspector_form_id');"
+    ]
+  }
+}
+

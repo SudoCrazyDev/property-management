@@ -1,0 +1,67 @@
+{
+  "table_name": "admin_punchlist_rooms",
+  "description": "Rooms for Admin Punchlist Forms (one-to-many relationship)",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "admin_punchlist_id",
+      "type": "unsignedBigInteger",
+      "nullable": false,
+      "foreign_key": {
+        "table": "admin_punchlists",
+        "column": "id",
+        "on_delete": "cascade"
+      },
+      "description": "Reference to admin punchlist form"
+    },
+    {
+      "name": "room_name",
+      "type": "string",
+      "length": 255,
+      "nullable": false,
+      "description": "Name of the room (from predefined list or custom)"
+    },
+    {
+      "name": "order",
+      "type": "integer",
+      "nullable": false,
+      "default": 0,
+      "description": "Order/position of the room"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["admin_punchlist_id"],
+      "name": "idx_admin_punchlist_rooms_punchlist_id"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->foreignId('admin_punchlist_id')->constrained('admin_punchlists')->onDelete('cascade');",
+      "$table->string('room_name', 255);",
+      "$table->integer('order')->default(0);",
+      "$table->timestamps();",
+      "$table->index('admin_punchlist_id');"
+    ]
+  }
+}
+

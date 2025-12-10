@@ -7,6 +7,11 @@ import { PropertiesPage } from "@/pages/properties"
 import { JobsPage } from "@/pages/jobs"
 import { SettingsPage } from "@/pages/settings"
 import { InspectorPage } from "@/pages/inspector"
+import { InspectorFormPage } from "@/pages/inspector-form"
+import { PublicInspectorFormPage } from "@/pages/public-inspector-form"
+import { PublicCreateFormPage } from "@/pages/public-create-form"
+import { PublicCreatePunchlistPage } from "@/pages/public-create-punchlist"
+import { PublicPunchlistPage } from "@/pages/public-punchlist"
 import { TechnicianPage } from "@/pages/technician"
 import { QAPage } from "@/pages/qa"
 import { MapsPage } from "@/pages/maps"
@@ -29,6 +34,22 @@ export const router = createBrowserRouter([
         <LoginPage />
       </PublicRoute>
     ),
+  },
+  {
+    path: "/public/form/:slug",
+    element: <PublicInspectorFormPage />,
+  },
+  {
+    path: "/public/create-form",
+    element: <PublicCreateFormPage />,
+  },
+  {
+    path: "/public/create-punchlist",
+    element: <PublicCreatePunchlistPage />,
+  },
+  {
+    path: "/public/punchlist/:slug",
+    element: <PublicPunchlistPage />,
   },
   {
     path: "/",
@@ -65,6 +86,10 @@ export const router = createBrowserRouter([
       {
         path: "inspector",
         element: <InspectorPage />,
+      },
+      {
+        path: "inspector-form",
+        element: <InspectorFormPage />,
       },
       {
         path: "technician",

@@ -1,0 +1,81 @@
+{
+  "table_name": "admin_punchlists",
+  "description": "Main table for Admin Punchlist Forms",
+  "fields": [
+    {
+      "name": "id",
+      "type": "bigIncrements",
+      "nullable": false,
+      "primary": true,
+      "description": "Primary key"
+    },
+    {
+      "name": "address",
+      "type": "string",
+      "length": 500,
+      "nullable": false,
+      "description": "Address of the property (required, editable)"
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "nullable": false,
+      "description": "Date of the punchlist (required)"
+    },
+    {
+      "name": "assigned_technician",
+      "type": "string",
+      "length": 255,
+      "nullable": true,
+      "description": "Assigned technician name (optional)"
+    },
+    {
+      "name": "public_slug",
+      "type": "string",
+      "length": 255,
+      "nullable": false,
+      "unique": true,
+      "description": "Unique public URL slug for sharing"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Created timestamp"
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": true,
+      "description": "Updated timestamp"
+    }
+  ],
+  "indexes": [
+    {
+      "columns": ["date"],
+      "name": "idx_admin_punchlists_date"
+    },
+    {
+      "columns": ["public_slug"],
+      "name": "idx_admin_punchlists_public_slug"
+    },
+    {
+      "columns": ["assigned_technician"],
+      "name": "idx_admin_punchlists_assigned_technician"
+    }
+  ],
+  "laravel_migration": {
+    "up": [
+      "$table->id();",
+      "$table->string('address', 500);",
+      "$table->date('date');",
+      "$table->string('assigned_technician', 255)->nullable();",
+      "$table->string('public_slug', 255)->unique();",
+      "$table->timestamps();",
+      "$table->index('date');",
+      "$table->index('public_slug');",
+      "$table->index('assigned_technician');"
+    ]
+  }
+}
+
